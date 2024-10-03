@@ -13,7 +13,7 @@ class Crew
     private goal: string;
     private sharedMemory: SharedMemory = {};
     private logger = new Logger('Crew');
-    private llm: OpenAI;
+    private llm: OpenAI = new OpenAI();
     private model: string = 'gpt-4o';
 
     constructor(goal: string, llm: OpenAI, model: string = 'gpt-4o')
