@@ -46,6 +46,7 @@ together to achieve common goals.
 
 3. Set up environment variables:
    Create a `.env` file in the root directory and add your API keys:
+   
    ```
    OPENAI_API_KEY=your_api_key_here
    GROQ_API_KEY=your_groq_api_key_here
@@ -113,7 +114,13 @@ runCrewMission();
 
 4. Run the script:
    ```
-   npx ts-node src/main.ts
+   npx ts-node src/index.ts
+   ```
+   
+   or
+   
+   ```
+   bun run src/index.ts
    ```
 
 ## Extending Tiny Crew
