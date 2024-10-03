@@ -1,14 +1,7 @@
 import Agent from '@/Agent';
-import pino from 'pino';
+import Logger from '@/utils/logger';
 
-const logger = pino({
-    transport: {
-        target: 'pino-pretty',
-        options: {
-            colorize: true
-        }
-    }
-});
+const logger = new Logger('Crew');
 
 interface SharedMemory {
     [key: string]: any;
@@ -25,19 +18,6 @@ class Crew {
 
     addAgent(agent: Agent): void {
         this.agents.push(agent);
-        agent.on('taskComplete', this.handleTaskComplete.bind(this));
-        agent.on('taskError', this.handleTaskError.bind(this));
-    }
-
-    private handleTaskComplete(result: { agent: string; task: string; result: string }): void {
-        logger.info(`Task completed by ${result.agent}: ${result.task}`);
-        logger.info(`Result: ${result.result}`);
-        this.updateSharedMemory(result.agent, result.task, result.result);
-    }
-
-    private handleTaskError(error: { agent: string; task: string; error: Error }): void {
-        logger.error(`Task error by ${error.agent}: ${error.task}`);
-        logger.error(`Error: ${error.error}`);
     }
 
     private updateSharedMemory(agent: string, task: string, result: string): void {
@@ -53,28 +33,33 @@ class Crew {
         );
     }
 
-    async assignTask(task: string): Promise<string | null> {
+    async assignTask(task: string): Promise<string> {
         const availableAgent = this.findSuitableAgent(task);
 
         if (availableAgent) {
             logger.info(`Assigning task to ${availableAgent.getName()}: ${task}`);
-            const result = await availableAgent.performTask(task, this.sharedMemory);
-            return result;
+            try {
+                const result = await availableAgent.performTask(task, this.sharedMemory);
+                this.updateSharedMemory(availableAgent.getName(), task, result);
+                return result;
+            } catch (error) {
+                logger.error(`Error in task execution: ${error}`);
+                throw error;
+            }
         } else {
-            logger.warn(`No suitable agent found for task: ${task}`);
-            return null;
+            const message = `No suitable agent found for task: ${task}`;
+            logger.warn(message);
+            return message;
         }
     }
 
     async achieveCrewGoal(): Promise<string> {
         logger.info(`Crew working towards goal: ${this.goal}`);
 
-        // Compile all the results from the shared memory
         const allResults = Object.entries(this.sharedMemory)
                                  .map(([task, data]) => `Task: ${task}\nResult: ${data.result}`)
                                  .join('\n\n');
 
-        // Find the agent best suited for summarization
         const summaryAgent = this.findSuitableAgent('summarize') || this.agents[0];
 
         if (summaryAgent) {
@@ -89,8 +74,14 @@ class Crew {
                 and overall implications or conclusions related to our goal.
             `;
 
-            const summary = await summaryAgent.performTask(summaryTask, this.sharedMemory);
-            return summary;
+            try {
+                const summary = await summaryAgent.performTask(summaryTask, this.sharedMemory);
+                this.updateSharedMemory(summaryAgent.getName(), 'Final Summary', summary);
+                return summary;
+            } catch (error) {
+                logger.error(`Error in creating summary: ${error}`);
+                throw error;
+            }
         } else {
             return `Unable to summarize progress towards goal: ${this.goal}. No suitable agent found for summarization.`;
         }

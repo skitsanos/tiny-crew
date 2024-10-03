@@ -9,8 +9,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "openai": "^4.67.1",
-    "pino": "^9.4.0",
-    "pino-pretty": "^11.2.2"
+    "dayjs": "^1.11.13",
+    "openai": "^4.67.1"
   }
 }
