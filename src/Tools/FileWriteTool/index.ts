@@ -7,7 +7,7 @@ class FileWriteTool implements Tool {
 
     schema = {
         name: 'FileWrite',
-        description: 'Write content to a file on the local filesystem',
+        description: 'This tool allows saving content to a file on the local filesystem',
         parameters: {
             type: 'object',
             properties: {

@@ -6,15 +6,14 @@ import FileWriteTool from '@/Tools/FileWriteTool';
 
 const logger = new Logger('Mission');
 
-const openai = new OpenAI({
-    // apiKey: process.env.GROQ_API_KEY,
-    // baseURL: process.env.GROQ_API_URL
-});
-
-const crew = new Crew('Develop and present a comprehensive overview of recent AI advancements and their implications');
-
-//const BASE_MODEL = 'llama-3.1-70b-versatile';
+const openai = new OpenAI();
 const BASE_MODEL = 'gpt-4o';
+
+const crew = new Crew(
+    'Develop and present a comprehensive overview of recent AI advancements and their implications. Use all available tools to achieve this goal.',
+    openai,
+    BASE_MODEL
+);
 
 const agent1 = new Agent({
     name: 'Alice',
@@ -25,8 +24,8 @@ const agent1 = new Agent({
 
 const agent2 = new Agent({
     name: 'Bob',
-    goal: 'Analyze and improve code, focusing on debugging and optimization',
-    expectedOutput: 'Explanations and code snippets',
+    goal: 'Perform code writing tasks, generate code examples, and save files',
+    expectedOutput: 'Confirmation that the code snippet was saved to a file',
     model: BASE_MODEL
 }, openai, [new FileWriteTool()]);
 
@@ -35,7 +34,7 @@ const agent3 = new Agent({
     goal: 'Synthesize information, create cohesive reports, and summarize overall findings',
     expectedOutput: 'Structured report with sections and summaries',
     model: BASE_MODEL
-}, openai);
+}, openai, [new FileWriteTool()]);
 
 crew.addAgent(agent1);
 crew.addAgent(agent2);
@@ -44,7 +43,7 @@ crew.addAgent(agent3);
 const tasks = [
     'Research recent advancements in AI and summarize them in 3 bullet points',
     'Analyze potential cybersecurity implications of recent AI advancements',
-    'Create a brief code snippet demonstrating a simple AI concept. Save it to a file named "ai_example.py"',
+    'Create a code example in Python that prints "Hello, World!". Save this example to a file "example.py"',
     'Synthesize the research and analysis into a coherent overview'
 ];
 
@@ -66,9 +65,7 @@ async function runCrewMission()
     try
     {
         const crewSummary = await crew.achieveCrewGoal();
-        console.log('----------------------------------------');
-        console.log(crewSummary);
-        //logger.info('Crew goal achievement summary:', crewSummary);
+        logger.info('Crew goal achievement summary:', crewSummary);
     }
     catch (error)
     {

@@ -94,6 +94,10 @@ class Logger
 
         if (this.outputFormat === 'text')
         {
+            logContent.message = Object.entries(logContent)
+                                       .filter(([key]) => key.startsWith('arg') || key === 'message')
+                                       .map(([, value]) => value).join(' ');
+
             const formattedLog = this.format.replace(/{(\w+)}/g, (_, key) => logContent[key] ?? '');
             await Bun.write(Bun.stdout, formattedLog + '\n');
         }

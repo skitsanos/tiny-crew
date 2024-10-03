@@ -1,15 +1,23 @@
 # Tiny Crew
 
-Tiny Crew is a lightweight, flexible multi-agent AI system designed to tackle complex tasks through collaboration. It leverages the power of large language models to create a team of specialized AI agents that work together to achieve a common goal.
+Tiny Crew is an innovative, flexible multi-agent AI system designed to tackle complex tasks through intelligent
+collaboration. It leverages the power of large language models to create a team of specialized AI agents that work
+together to achieve common goals.
 
 ## Features
 
+- **LLM-Driven Agent Selection**: Utilizes a language model to intelligently assign tasks to the most suitable agent
+  based on task requirements and agent capabilities.
 - **Multi-Agent Collaboration**: Create a crew of AI agents, each with their own specialization and goal.
-- **Flexible Task Assignment**: Automatically assign tasks to the most suitable agent based on their expertise.
-- **Shared Knowledge Base**: Agents can share information and build upon each other's work.
-- **Tool Integration**: Optionally equip agents with tools for interacting with external systems (e.g., file operations, database queries, web access).
+- **Flexible Task Assignment**: Dynamically assigns tasks to agents based on their skills and available tools.
+- **Shared Knowledge Base**: Agents can share information and build upon each other's work through a shared memory
+  system.
+- **Tool Integration**: Equip agents with tools for interacting with external systems (e.g., file operations, database
+  queries, web access).
 - **Goal-Oriented Workflow**: Define an overarching goal for the crew and let them work towards it collaboratively.
 - **Extensible Architecture**: Easily add new agents, tools, or modify existing ones to suit your specific needs.
+- **Intelligent Summarization**: Uses the LLM to generate comprehensive summaries of the crew's work, addressing the
+  overall goal.
 
 ## Prerequisites
 
@@ -30,10 +38,17 @@ Tiny Crew is a lightweight, flexible multi-agent AI system designed to tackle co
    npm install
    ```
 
+   or
+
+   ```
+   bun install
+   ```
+
 3. Set up environment variables:
    Create a `.env` file in the root directory and add your API keys:
    ```
-   GROQ_API_KEY=your_api_key_here
+   OPENAI_API_KEY=your_api_key_here
+   GROQ_API_KEY=your_groq_api_key_here
    GROQ_API_URL=https://api.groq.com/openai/v1
    ```
 
@@ -49,16 +64,27 @@ const agent1 = new Agent({
     model: BASE_MODEL
 }, openai);
 
+const agent2 = new Agent({
+    name: 'Bob',
+    goal: 'Perform code writing tasks, generate code examples, and save files',
+    expectedOutput: 'Confirmation that the code snippet was saved to a file',
+    model: BASE_MODEL
+}, openai, [new FileWriteTool()]);
+
 // Add more agents as needed
 ```
 
 2. Create a crew and add agents:
 
 ```typescript
-const crew = new Crew('Develop and present a comprehensive overview of recent AI advancements and their implications');
+const llm = new OpenAI({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: process.env.GROQ_API_URL
+});
+
+const crew = new Crew('Develop and present a comprehensive overview of recent AI advancements and their implications', llm);
 crew.addAgent(agent1);
 crew.addAgent(agent2);
-crew.addAgent(agent3);
 ```
 
 3. Define tasks and run the crew mission:
@@ -66,13 +92,14 @@ crew.addAgent(agent3);
 ```typescript
 const tasks = [
     'Research recent advancements in AI and summarize them in 3 bullet points',
-    'Analyze potential cybersecurity implications of recent AI advancements',
-    'Create a brief code snippet demonstrating a simple AI concept',
+    'Create a Python file named "example.py" with a "Hello, World!" program',
     'Synthesize the research and analysis into a coherent overview'
 ];
 
-async function runCrewMission() {
-    for (const task of tasks) {
+async function runCrewMission()
+{
+    for (const task of tasks)
+    {
         const result = await crew.assignTask(task);
         console.log(`Task result: ${result}`);
     }
@@ -100,14 +127,13 @@ Create new agents by instantiating the `Agent` class with different goals and sp
 Create new tools by implementing the `Tool` interface:
 
 ```typescript
-class MyNewTool implements Tool {
+class MyNewTool implements Tool
+{
     name = 'MyNewTool';
     description = 'Description of what the tool does';
-    schema = {
-        // Define the tool's schema here
-    };
 
-    async use(args: any): Promise<any> {
+    async use(args: any): Promise<any>
+    {
         // Implement the tool's functionality
     }
 }
