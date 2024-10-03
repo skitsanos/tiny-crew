@@ -1,0 +1,16 @@
+{
+  "name": "tiny-crew",
+  "module": "src/index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "openai": "^4.67.1",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2"
+  }
+}
