@@ -58,7 +58,7 @@ class Agent extends EventEmitter
         return this.getTools().some(tool => tool.name === toolName);
     }
 
-    async performTask(task: string, sharedMemory: any): Promise<string>
+    async performTask(task: string, sharedMemory: any, chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []): Promise<string>
     {
         this.logger.trace(`Performing task: ${task}`);
 
@@ -71,6 +71,7 @@ class Agent extends EventEmitter
                 role: 'system',
                 content: `Shared crew knowledge: ${JSON.stringify(sharedMemory)}`
             },
+            ...chatHistory,
             {
                 role: 'user',
                 content: task
@@ -162,7 +163,8 @@ class Agent extends EventEmitter
 
                 const summaryCompletion = await this.llmConfig.client.chat.completions.create({
                     model: this.llmConfig.model,
-                    messages: messages
+                    messages: messages,
+                    temperature: 0
                 });
 
                 const summaryResponse = summaryCompletion.choices[0].message.content;

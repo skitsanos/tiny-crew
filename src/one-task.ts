@@ -12,8 +12,15 @@ const openai = new OpenAI();
 // Define the base model
 const BASE_MODEL = 'gpt-4o';
 
+const chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    {
+        role: 'system',
+        content: 'You are a writer that works for a company Gedank Rayze and you must mention the company name in the report.'
+    }
+];
+
 // Create a crew with a specific goal
-const crew = new Crew('Write a brief report on AI ethics and save it to a file', openai, BASE_MODEL);
+const crew = new Crew('Write a brief report on AI ethics and save it to a file', openai, BASE_MODEL, chatHistory);
 
 // Create an agent with FileWriteTool
 const writer = new Agent({
@@ -28,7 +35,7 @@ crew.addAgent(writer);
 
 // Define the task
 const task = `Write a comprehensive and detailed report on the ethical considerations of AI development 
-and save it to a file named "ai_ethics_report.md". User Markdown formatting.`;
+and save it to a file named "ai_ethics_report.md". Use Markdown formatting.`;
 
 async function runFileWriteExample()
 {
@@ -39,8 +46,11 @@ async function runFileWriteExample()
         logger.info('Task completed. Result:', result);
 
         // Achieve the crew's goal (in this case, it's the same as the task)
-        const summary = await crew.achieveCrewGoal();
-        logger.info('Crew goal achievement summary:', summary);
+        // const summary = await crew.achieveCrewGoal();
+        // logger.info('Crew goal achievement summary:', summary);
+
+        const finalResponse = await crew.provideFinalResponse();
+        console.log('---\n', finalResponse, '\n---\n\n');
     }
     catch (error)
     {
