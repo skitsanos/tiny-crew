@@ -1,15 +1,16 @@
 {
   "name": "tiny-crew",
+  "version": "1.2.0",
   "module": "src/index.ts",
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.6.2"
   },
   "dependencies": {
     "dayjs": "^1.11.13",
-    "openai": "^4.67.1"
+    "openai": "^4.67.2"
   }
 }
