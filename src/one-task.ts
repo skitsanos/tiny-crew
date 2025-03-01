@@ -20,7 +20,10 @@ const chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
 ];
 
 // Create a crew with a specific goal
-const crew = new Crew('Write a brief report on AI ethics and save it to a file', openai, BASE_MODEL, chatHistory);
+const crew = new Crew({
+    goal: 'Write a brief report on AI ethics and save it to a file',
+    model: BASE_MODEL,
+}, openai, chatHistory);
 
 // Create an agent with FileWriteTool
 const writer = new Agent({
@@ -44,10 +47,6 @@ async function runFileWriteExample()
         logger.info('Starting file write task');
         const result = await crew.assignTask(task);
         logger.info('Task completed. Result:', result);
-
-        // Achieve the crew's goal (in this case, it's the same as the task)
-        // const summary = await crew.achieveCrewGoal();
-        // logger.info('Crew goal achievement summary:', summary);
 
         const finalResponse = await crew.provideFinalResponse();
         console.log('---\n', finalResponse, '\n---\n\n');

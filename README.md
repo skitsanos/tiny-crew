@@ -1,39 +1,49 @@
 # Tiny Crew
 
-Tiny Crew is an innovative, flexible multi-agent AI system designed to tackle complex tasks through intelligent
-collaboration. It leverages the power of large language models to create a team of specialized AI agents that work
-together to achieve common goals.
+## TLDR;
+
+TinyCrew is a TypeScript framework that orchestrates multiple AI agents to solve complex tasks collaboratively. It features:
+
+- **Agent System**: Specialized AI assistants with distinct goals and tools
+- **Crew Management**: Central coordinator that assigns tasks to appropriate agents
+- **Shared Memory**: Knowledge transfer between agents
+- **Tool Integration**: Extensible system for agents to interact with external services
+- **Event System**: Monitoring of task progress and memory updates
+- **Error Handling**: Robust recovery and reporting
+- **Logging**: Comprehensive activity tracking
+
+The project enables complex AI workflows by breaking them into specialized sub-tasks, much like a team of experts working together. Applications include creative writing, research analysis, code generation, and other scenarios where multiple specialized skills are needed to achieve a cohesive outcome.
 
 ## Features
 
-- **LLM-Driven Agent Selection**: Utilizes a language model to intelligently assign tasks to the most suitable agent
-  based on task requirements and agent capabilities.
-- **Multi-Agent Collaboration**: Create a crew of AI agents, each with their own specialization and goal.
-- **Flexible Task Assignment**: Dynamically assigns tasks to agents based on their skills and available tools.
-- **Shared Knowledge Base**: Agents can share information and build upon each other's work through a shared memory
-  system.
-- **Tool Integration**: Equip agents with tools for interacting with external systems (e.g., file operations, database
-  queries, web access).
-- **Goal-Oriented Workflow**: Define an overarching goal for the crew and let them work towards it collaboratively.
-- **Extensible Architecture**: Easily add new agents, tools, or modify existing ones to suit your specific needs.
-- **Intelligent Summarization**: Uses the LLM to generate comprehensive summaries of the crew's work, addressing the
-  overall goal.
+- **Enhanced Agent Architecture**: Specialized AI agents with unique capabilities, configurable system prompts, and robust tool integration.
+- **Task Management System**: Complete task lifecycle management with status tracking, dependencies, and parallel execution.
+- **Event-Driven Communication**: Comprehensive event system for monitoring agent activities and crew progress.
+- **Configurable Memory System**: Structured shared memory with timestamps and metadata for improved knowledge sharing.
+- **Secure Tool Integration**: Tool system with input validation, security controls, and flexible configuration.
+- **Extensible Logging**: Enhanced logging with levels, formatting options, and support for both Node.js and Bun environments.
+- **LLM-Driven Agent Selection**: Intelligent task assignment using language models to match tasks with the most suitable agent.
+- **Parallel Processing**: Execute multiple tasks concurrently for improved efficiency.
+- **Reflection Capabilities**: Agents can analyze and improve their performance through task reflection.
+- **Customizable Prompting**: Fine-tune system prompts and task instructions for specialized agent behaviors.
 
 ## Prerequisites
 
-- Node.js or Bun
+- Node.js (v16+) or Bun
 - TypeScript
-- OpenAI API key or compatible API (e.g., Groq)
+- OpenAI API key or compatible API (e.g., Groq, Ollama, etc.)
 
 ## Installation
 
 1. Clone the repository:
+
    ```
    git clone https://github.com/skitsanos/tiny-crew.git
    cd tiny-crew
    ```
 
 2. Install dependencies:
+
    ```
    npm install
    ```
@@ -44,114 +54,271 @@ together to achieve common goals.
    bun install
    ```
 
-3. Set up environment variables:
-   Create a `.env` file in the root directory and add your API keys:
-   
+3. Set up environment variables: Create a `.env` file in the root directory and add your API keys:
+
    ```
    OPENAI_API_KEY=your_api_key_here
-   GROQ_API_KEY=your_groq_api_key_here
-   GROQ_API_URL=https://api.groq.com/openai/v1
+   LLM_MODEL=gpt-4o
+   LOG_LEVEL=INFO
    ```
 
 ## Usage
 
-1. Define your agents in the main script (e.g., `src/main.ts`):
+### Basic Example
 
 ```typescript
-const agent1 = new Agent({
+import { Crew } from './Crew';
+import { Agent } from './Agent';
+import OpenAI from 'openai';
+import { Logger } from './Logger';
+import { FileWriteTool } from './tools/FileWriteTool';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
+
+// Initialize logger
+const logger = new Logger('TinyCrew', { colorize: true });
+
+async function main() {
+  // Configure OpenAI client
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const baseModel = process.env.LLM_MODEL || 'gpt-4o';
+  
+  // Create a file writing tool
+  const fileWriteTool = new FileWriteTool({
+    basePath: process.env.FILE_WRITE_BASE_PATH || './output',
+    allowedExtensions: ['.txt', '.md', '.json', '.py']
+  });
+
+  // Create a crew with a specific goal
+  const crew = new Crew(
+    {
+      goal: 'Develop a comprehensive overview of recent AI advancements',
+      model: baseModel
+    },
+    openai
+  );
+  
+  // Create specialized agents
+  const researchAgent = new Agent({
     name: 'Alice',
     goal: 'Conduct research and provide concise summaries',
-    expectedOutput: 'Bullet points or short paragraphs',
-    model: BASE_MODEL
+    capabilities: ['research', 'summarization']
+  }, openai);
+  
+  const developerAgent = new Agent({
+    name: 'Bob',
+    goal: 'Perform code writing tasks and generate examples',
+    capabilities: ['coding', 'file_management']
+  }, openai, [fileWriteTool]);
+  
+  // Add agents to crew
+  crew.addAgent(researchAgent);
+  crew.addAgent(developerAgent);
+  
+  // Add tasks to the queue
+  crew.addTask('Research recent advancements in AI and summarize them');
+  crew.addTask('Create a Python example demonstrating basic AI concepts');
+  
+  // Execute all tasks
+  await crew.executeAllTasks();
+  
+  // Generate final summary
+  const summary = await crew.achieveCrewGoal();
+  console.log('Mission completed!', summary);
+}
+
+main();
+```
+
+### Creative Writing Example
+
+```typescript
+// Create specialized writing agents
+const plotWriter = new Agent({
+  name: 'Plot Developer',
+  goal: 'Develop engaging plot points and story structure',
+  capabilities: ['plot_development', 'story_structure'],
+  temperature: 0.7
 }, openai);
 
-const agent2 = new Agent({
-    name: 'Bob',
-    goal: 'Perform code writing tasks, generate code examples, and save files',
-    expectedOutput: 'Confirmation that the code snippet was saved to a file',
-    model: BASE_MODEL
-}, openai, [new FileWriteTool()]);
+const characterDesigner = new Agent({
+  name: 'Character Designer',
+  goal: 'Create detailed character profiles',
+  capabilities: ['character_development', 'motivation_design'],
+  temperature: 0.7
+}, openai);
 
-// Add more agents as needed
+// Add more creative agents...
+
+// Add agents to crew
+crew.addAgent(plotWriter);
+crew.addAgent(characterDesigner);
+
+// Define writing tasks
+crew.addTask('Develop a plot outline for a sci-fi story about time travel');
+crew.addTask('Create profiles for 3-5 main characters in the story');
+
+// Execute tasks sequentially
+await crew.executeAllTasks();
+
+// Generate final story
+const finalStory = await crew.provideFinalResponse(
+  'Write a complete story integrating all elements'
+);
 ```
 
-2. Create a crew and add agents:
+## Advanced Features
+
+### Parallel Task Execution
 
 ```typescript
-const llm = new OpenAI({
-    apiKey: process.env.GROQ_API_KEY,
-    baseURL: process.env.GROQ_API_URL
+// Add multiple tasks
+crew.addTask('Task 1');
+crew.addTask('Task 2');
+crew.addTask('Task 3');
+
+// Execute tasks in parallel
+const results = await crew.executeTasksInParallel();
+```
+
+### Event Monitoring
+
+```typescript
+// Monitor crew events
+crew.on('task_assigned', (data) => {
+  console.log(`Task assigned to ${data.agent}: ${data.task}`);
 });
 
-const crew = new Crew('Develop and present a comprehensive overview of recent AI advancements and their implications', llm);
-crew.addAgent(agent1);
-crew.addAgent(agent2);
+crew.on('memory_updated', (data) => {
+  console.log(`Memory updated by ${data.update.agent}`);
+});
+
+// Monitor agent events
+agent.on('task_completed', (result) => {
+  console.log(`Task completed: ${result.task}`);
+});
 ```
 
-3. Define tasks and run the crew mission:
+### Agent Reflection
+
+Agent Reflection is a powerful feature that allows agents to analyze their own performance and learn from completed tasks. This introspective capability helps agents improve over time and provides valuable insights into their decision-making process.
 
 ```typescript
-const tasks = [
-    'Research recent advancements in AI and summarize them in 3 bullet points',
-    'Create a Python file named "example.py" with a "Hello, World!" program',
-    'Synthesize the research and analysis into a coherent overview'
-];
+// After a task is completed
+const taskId = 'task_123';
+const reflection = await agent.reflect(taskId);
+console.log('Agent reflection:', reflection);
+```
 
-async function runCrewMission()
-{
-    for (const task of tasks)
-    {
-        const result = await crew.assignTask(task);
-        console.log(`Task result: ${result}`);
+Reflections help agents:
+
+- Identify strengths and weaknesses in their approach
+- Recognize patterns across similar tasks
+- Suggest improvements for future task execution
+- Provide transparency into their reasoning process
+- Document lessons learned for the crew's shared knowledge
+
+Example reflection prompt customization:
+
+```typescript
+const agent = new Agent({
+  name: 'ResearchAgent',
+  goal: 'Conduct thorough research on topics',
+  capabilities: ['research', 'analysis'],
+  metadata: {
+    reflectionPrompt: `
+      Analyze how you approached this {task}.
+      What information sources did you prioritize?
+      What search strategies were effective?
+      What could you improve next time?
+      What unexpected challenges did you encounter?
+    `
+  }
+}, openai);
+```
+
+Reflections are stored in the task's metadata and can be accessed later for agent performance analysis or to inform future task strategies.
+
+## Extending TinyCrew
+
+### Creating Custom Tools
+
+Implement the `Tool` interface to create custom tools:
+
+```typescript
+import { Tool, ToolSchema } from '../types';
+import { Logger } from '../Logger';
+
+export class CustomTool implements Tool {
+  public readonly name = 'CustomTool';
+  public readonly description = 'Description of what the tool does';
+  private readonly logger: Logger;
+  
+  constructor() {
+    this.logger = new Logger('CustomTool');
+  }
+  
+  public readonly schema: ToolSchema = {
+    name: this.name,
+    description: this.description,
+    parameters: {
+      type: 'object',
+      properties: {
+        param1: {
+          type: 'string',
+          description: 'Description of parameter 1'
+        }
+      },
+      required: ['param1']
     }
-
-    const crewSummary = await crew.achieveCrewGoal();
-    console.log('Crew goal achievement summary:', crewSummary);
+  };
+  
+  public validateInput(args: any): boolean {
+    // Validate input
+    return true;
+  }
+  
+  public async use(args: any): Promise<any> {
+    // Implement tool functionality
+    this.logger.info('Using custom tool with args:', args);
+    return { result: 'Tool execution result' };
+  }
+  
+  public getCapabilities(): string[] {
+    return ['capability1', 'capability2'];
+  }
 }
-
-runCrewMission();
 ```
 
-4. Run the script:
-   ```
-   npx ts-node src/index.ts
-   ```
-   
-   or
-   
-   ```
-   bun run src/index.ts
-   ```
+### Creating a Plugin System
 
-## Extending Tiny Crew
-
-### Adding New Agents
-
-Create new agents by instantiating the `Agent` class with different goals and specializations.
-
-### Implementing Tools
-
-Create new tools by implementing the `Tool` interface:
+TinyCrew supports plugins to extend functionality:
 
 ```typescript
-class MyNewTool implements Tool
-{
-    name = 'MyNewTool';
-    description = 'Description of what the tool does';
+import { TinyCrewPlugin } from './types';
 
-    async use(args: any): Promise<any>
-    {
-        // Implement the tool's functionality
+const analyticsPlugin: TinyCrewPlugin = {
+  name: 'AnalyticsPlugin',
+  description: 'Tracks and analyzes agent performance',
+  
+  async initialize(context: any): Promise<void> {
+    // Set up plugin
+  },
+  
+  hooks: {
+    onTaskComplete: (result: any) => {
+      // Track task completion
+    },
+    onMemoryUpdate: (memory: any) => {
+      // Analyze memory usage
     }
-}
-```
+  }
+};
 
-Then, pass the tool to an agent when creating it:
-
-```typescript
-const agentWithTool = new Agent({
-    // Agent configuration
-}, openai, [new MyNewTool()]);
+// Register plugin with crew
+crew.registerPlugin(analyticsPlugin);
 ```
 
 ## Contributing
