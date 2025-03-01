@@ -16,6 +16,35 @@ The project enables complex AI workflows by breaking them into specialized sub-t
 
 ## Features
 
+TinyCrew represents a solid foundation for many agentic tasks, but with some important considerations:
+
+**Strengths:**
+
+- The multi-agent architecture with specialized roles works well for collaborative tasks
+- The shared memory system enables effective knowledge-building between agents
+- The event system provides good visibility into the process
+- Tool integration allows for real-world interactions
+- The reflection capability enables some self-improvement
+
+**Limitations:**
+
+- It lacks long-term memory persistence between sessions
+- There's no built-in web browsing or search capability (though you could add this)
+- The task planning is relatively simple compared to more sophisticated planning frameworks
+- It doesn't have built-in knowledge graph or vector storage for more complex information relationships
+- There's limited autonomous decision-making about which tasks to perform next
+
+For many practical use cases like content creation, basic research, and collaborative problem-solving, TinyCrew provides enough structure to be effective. The framework is particularly well-suited for tasks where:
+
+1. The workflow is relatively well-defined
+2. Tasks can be cleanly divided between specialized agents
+3. The scope is contained within a single session
+4. Tool usage is straightforward
+
+For more complex scenarios involving dynamic planning, autonomous exploration, or long-running processes, you might need to extend TinyCrew with additional capabilities or integrate it with other systems.
+
+### Features in details
+
 - **Enhanced Agent Architecture**: Specialized AI agents with unique capabilities, configurable system prompts, and robust tool integration.
 - **Task Management System**: Complete task lifecycle management with status tracking, dependencies, and parallel execution.
 - **Event-Driven Communication**: Comprehensive event system for monitoring agent activities and crew progress.
@@ -170,6 +199,101 @@ const finalStory = await crew.provideFinalResponse(
 ```
 
 ## Advanced Features
+
+### Crew Memory
+
+Let's explore the memory system in TinyCrew - it's one of the core components that enables effective collaboration between agents.
+
+#### How Memory Works in TinyCrew
+
+At its core, the shared memory system in TinyCrew is what allows multiple agents to build on each other's work. Here's how it functions:
+
+1. **Structure**: Memory is implemented as a key-value store where each entry contains:
+
+   - A unique key (typically based on the task)
+   - The value (task result or other information)
+   - Metadata (agent name, timestamp, additional context)
+   - Agent attribution (which agent provided this information)
+
+2. **Update Mechanism**: When an agent completes a task, its results are automatically stored in shared memory:
+
+   ```typescript
+   private updateSharedMemory(agent: string, task: string, result: string): void {
+     const itemKey = `task_${task.slice(0, 20).replace(/\W+/g, '_')}`;
+     
+     this.sharedMemory[itemKey] = {
+       key: itemKey,
+       value: { task, result },
+       agent,
+       timestamp: Date.now(),
+       metadata: {}
+     };
+     
+     this.emit(CrewEvent.MEMORY_UPDATED, { ... });
+   }
+   ```
+
+3. **Access Pattern**: When a new task is assigned, the agent receives the current state of shared memory:
+
+   ```typescript
+   const messages: OpenAI.ChatCompletionMessageParam[] = [
+     { role: 'system', content: this.systemPrompt },
+     { 
+       role: 'system', 
+       content: `Shared knowledge: ${JSON.stringify(Object.values(sharedMemory)
+                                 .map(item => ({ ... }))}`
+     },
+     // Other messages...
+   ];
+   ```
+
+4. **Event Notification**: Memory updates trigger events that the crew and other components can listen for:
+
+   ```typescript
+   this.emit(CrewEvent.MEMORY_UPDATED, {
+     crew: this.id,
+     memory: this.sharedMemory,
+     update: { key, agent, task, timestamp }
+   });
+   ```
+
+#### Benefits of the Memory System
+
+1. **Knowledge Building**: Each agent can build upon information discovered by other agents rather than starting from scratch.
+2. **Task Context**: Agents understand what has already been accomplished and can refer to specific information from previous tasks.
+3. **Coherent Outputs**: The final output integrates contributions from all agents into a cohesive whole.
+4. **Temporal Context**: Timestamps allow agents to understand the sequence of discoveries and changes.
+5. **Attribution**: The system tracks which agent generated which information, enabling proper credit and context.
+
+#### Practical Applications
+
+1. **Research Tasks**: One agent finds basic information, another analyzes it, and a third synthesizes the findings.
+2. **Creative Writing**: As we've seen in the Creative Writing example, different agents can handle plot, characters, and dialogue, with each building on the others' work.
+3. **Code Development**: One agent can design an architecture, another can implement specific functions, and a third can write tests - all sharing their progress.
+4. **Problem Solving**: Complex problems can be broken down, with different agents tackling different aspects and sharing insights.
+
+#### Memory Handling Example
+
+```typescript
+// In a custom task workflow
+async function analyzeDocument(crew, documentText) {
+  // First agent extracts key points
+  await crew.assignTask(`Extract the main points from: ${documentText.substring(0, 1000)}...`);
+  
+  // Second agent analyzes the points (with access to first agent's findings)
+  await crew.assignTask("Analyze the main points and identify patterns or insights");
+  
+  // Third agent makes recommendations based on all previous work
+  await crew.assignTask("Based on the analysis, provide 3 actionable recommendations");
+  
+  // The final response incorporates all the shared knowledge
+  return await crew.provideFinalResponse("Synthesize the analysis into a concise report");
+}
+```
+
+The shared memory system is what makes TinyCrew truly collaborative rather than just a sequence of independent agents. It enables emergent intelligence where the collective output is greater than what any individual agent could produce alone.
+
+Would you like me to elaborate on any specific aspect of the memory system, such as advanced memory management or ways to extend it for specific use cases?
 
 ### Parallel Task Execution
 
