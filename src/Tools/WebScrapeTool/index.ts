@@ -180,9 +180,8 @@ interface WebScrapeArgs {
     /**
      * Extract links from the HTML document
      */
-    private extractLinks($: cheerio.CheerioAPI, baseUrl: string): Array<{text: string, url: string}> {
+    private extractLinks($: cheerio.Root, baseUrl: string): Array<{text: string, url: string}> {
         const links: Array<{text: string, url: string}> = [];
-
         $('a[href]').each((_, element) => {
             const linkElement = $(element);
             const href = linkElement.attr('href') || '';
@@ -203,7 +202,7 @@ interface WebScrapeArgs {
     /**
      * Extract images from the HTML document
      */
-    private extractImages($: cheerio.CheerioAPI, baseUrl: string): Array<{alt: string, url: string}> {
+    private extractImages($: cheerio.Root, baseUrl: string): Array<{alt: string, url: string}> {
         const images: Array<{alt: string, url: string}> = [];
 
         $('img[src]').each((_, element) => {
@@ -226,7 +225,7 @@ interface WebScrapeArgs {
     /**
      * Extract tables from the HTML document
      */
-    private extractTables($: cheerio.CheerioAPI): Array<Array<Array<string>>> {
+    private extractTables($: cheerio.Root): Array<Array<Array<string>>> {
         const tables: Array<Array<Array<string>>> = [];
 
         $('table').each((_, tableEl) => {
