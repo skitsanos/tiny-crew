@@ -2,10 +2,11 @@
  * Enhanced application logging for TypeScript applications
  * @version 3.0.0
  */
-import { hostname } from 'os';
+import {hostname} from 'os';
 import dayjs from 'dayjs';
 
-export enum LogLevel {
+export enum LogLevel
+{
     TRACE = 0,
     DEBUG = 1,
     INFO = 2,
@@ -16,7 +17,8 @@ export enum LogLevel {
 
 export type OutputFormat = 'text' | 'json';
 
-export interface LoggerOptions {
+export interface LoggerOptions
+{
     level?: LogLevel | string;
     outputFormat?: OutputFormat;
     format?: string;
@@ -32,16 +34,19 @@ export interface LoggerOptions {
     additionalFields?: Record<string, any>;
 }
 
-interface LogContent {
+interface LogContent
+{
     timestamp: string;
     host: string;
     level: string;
     context: string;
     message: any;
+
     [key: string]: any;
 }
 
-export class Logger {
+export class Logger
+{
     private readonly context: string;
     private readonly level: LogLevel;
     private readonly outputFormat: OutputFormat;
@@ -50,7 +55,8 @@ export class Logger {
     private readonly colorTheme: Required<LoggerOptions['colorTheme']>;
     private readonly additionalFields: Record<string, any>;
 
-    constructor(context: string, options: LoggerOptions = {}) {
+    constructor(context: string, options: LoggerOptions = {})
+    {
         // Environment variables with defaults
         const {
             LOG_LEVEL = 'INFO',
@@ -83,7 +89,9 @@ export class Logger {
         } = options;
 
         this.context = context;
-        this.level = LogLevel[level as keyof typeof LogLevel] ?? LogLevel.INFO;
+        this.level = typeof level === 'string'
+                     ? LogLevel[level as keyof typeof LogLevel] ?? LogLevel.INFO
+                     : level;
         this.outputFormat = outputFormat;
         this.format = format;
         this.colorize = colorize;
@@ -91,14 +99,21 @@ export class Logger {
         this.additionalFields = additionalFields;
     }
 
-    private getColoredText(text: string, color?: string): string {
-        if (!this.colorize || !color) return text;
+    private getColoredText(text: string, color?: string): string
+    {
+        if (!this.colorize || !color)
+        {
+            return text;
+        }
 
         // Support for Node.js and Bun environments
-        if (typeof Bun !== 'undefined') {
+        if (typeof Bun !== 'undefined')
+        {
             // @ts-ignore - Bun-specific API
             return `${Bun.color(color, 'ansi') + text}\x1b[0m`;
-        } else {
+        }
+        else
+        {
             // Basic ANSI color support for Node.js
             const ansiColors: Record<string, string> = {
                 'red': '\x1b[31m',
@@ -116,39 +131,49 @@ export class Logger {
         }
     }
 
-    private shouldLog(level: LogLevel): boolean {
+    private shouldLog(level: LogLevel): boolean
+    {
         return level >= this.level;
     }
 
-    private formatMessage(logContent: LogContent): string {
-        return this.format.replace(/{(\w+)}/g, (_, key) => {
-            if (!logContent[key]) return '';
+    private formatMessage(logContent: LogContent): string
+    {
+        return this.format.replace(/{(\w+)}/g, (_, key) =>
+        {
+            if (!logContent[key])
+            {
+                return '';
+            }
 
-            switch (key) {
+            switch (key)
+            {
                 case 'level':
                     return this.getColoredText(
                         logContent[key],
-                        this.colorTheme?.levels[logContent[key]]
+                        this.colorTheme.levels[logContent[key]]
                     );
                 case 'timestamp':
-                    return this.getColoredText(logContent[key], this.colorTheme?.timestamp);
+                    return this.getColoredText(logContent[key], this.colorTheme.timestamp);
                 case 'host':
-                    return this.getColoredText(logContent[key], this.colorTheme?.host);
+                    return this.getColoredText(logContent[key], this.colorTheme.host);
                 case 'context':
-                    return this.getColoredText(logContent[key], this.colorTheme?.context);
+                    return this.getColoredText(logContent[key], this.colorTheme.context);
                 case 'message':
-                    return this.getColoredText(logContent[key], this.colorTheme?.message);
+                    return this.getColoredText(logContent[key], this.colorTheme.message);
                 default:
-                    if (Object.keys(this.additionalFields).includes(key)) {
-                        return this.getColoredText(logContent[key], this.colorTheme?.additionalField);
+                    if (Object.keys(this.additionalFields).includes(key))
+                    {
+                        return this.getColoredText(logContent[key], this.colorTheme.additionalField);
                     }
                     return logContent[key];
             }
         });
     }
 
-    private async writeLog(level: LogLevel, message: any, ...args: any[]): Promise<void> {
-        if (!this.shouldLog(level)) {
+    private async writeLog(level: LogLevel, message: any, ...args: any[]): Promise<void>
+    {
+        if (!this.shouldLog(level))
+        {
             return;
         }
 
@@ -162,64 +187,84 @@ export class Logger {
         };
 
         // Process additional arguments
-        if (args.length > 0) {
-            args.forEach((arg, index) => {
-                if (typeof arg === 'object' && arg !== null) {
-                    Object.entries(arg).forEach(([key, value]) => {
+        if (args.length > 0)
+        {
+            args.forEach((arg, index) =>
+            {
+                if (typeof arg === 'object' && arg !== null)
+                {
+                    Object.entries(arg).forEach(([key, value]) =>
+                    {
                         logContent[key] = value;
                     });
-                } else {
+                }
+                else
+                {
                     logContent[`arg${index}`] = arg;
                 }
             });
         }
 
         // Format the message for text output
-        if (this.outputFormat === 'text') {
+        if (this.outputFormat === 'text')
+        {
             const formattedLog = this.formatMessage(logContent);
             await this.writeToOutput(formattedLog + '\n');
-        } else if (this.outputFormat === 'json') {
+        }
+        else if (this.outputFormat === 'json')
+        {
             await this.writeToOutput(JSON.stringify(logContent) + '\n');
         }
     }
 
-    private async writeToOutput(text: string): Promise<void> {
-        if (typeof Bun !== 'undefined') {
+    private async writeToOutput(text: string): Promise<void>
+    {
+        if (typeof Bun !== 'undefined')
+        {
             // Bun environment
             await Bun.write(Bun.stdout, text);
-        } else {
+        }
+        else
+        {
             // Node.js environment
             process.stdout.write(text);
         }
     }
 
     // Public logging methods
-    trace(message: any, ...args: any[]): void {
+    trace(message: any, ...args: any[]): void
+    {
         this.writeLog(LogLevel.TRACE, message, ...args);
     }
 
-    debug(message: any, ...args: any[]): void {
+    debug(message: any, ...args: any[]): void
+    {
         this.writeLog(LogLevel.DEBUG, message, ...args);
     }
 
-    info(message: any, ...args: any[]): void {
+    info(message: any, ...args: any[]): void
+    {
         this.writeLog(LogLevel.INFO, message, ...args);
     }
 
-    warn(message: any, ...args: any[]): void {
+    warn(message: any, ...args: any[]): void
+    {
         this.writeLog(LogLevel.WARN, message, ...args);
     }
 
-    error(message: any, ...args: any[]): void {
+    error(message: any, ...args: any[]): void
+    {
         this.writeLog(LogLevel.ERROR, message, ...args);
     }
 
-    fatal(message: any, ...args: any[]): void {
+    fatal(message: any, ...args: any[]): void
+    {
         this.writeLog(LogLevel.FATAL, message, ...args);
     }
 
     // Create a child logger with a sub-context
-    child(subContext: string): Logger {
+    child(subContext: string): Logger
+    {
         return new Logger(`${this.context}:${subContext}`, {
             level: this.level,
             outputFormat: this.outputFormat,
