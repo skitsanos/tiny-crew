@@ -4,14 +4,18 @@
   "module": "src/index.ts",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/cheerio": "^0.22.35",
+    "@types/jsdom": "^21.1.7"
   },
   "peerDependencies": {
     "typescript": "^5.6.2"
   },
   "dependencies": {
+    "cheerio": "^1.0.0",
     "dayjs": "^1.11.13",
     "dedent": "^1.5.3",
+    "jsdom": "^26.0.0",
     "openai": "^4.86.1",
     "uuid": "^11.1.0"
   }

@@ -1,3 +1,9 @@
+/**
+ * TinyCrew - A simple example of using the TinyCrew library to manage a team of AI agents
+ * to complete a series of tasks and generate a comprehensive report.
+ *
+ * More examples can bed found in the examples folder.
+ */
 import {Crew} from './Crew';
 import {Agent} from './Agent';
 import OpenAI from 'openai';
@@ -102,10 +108,10 @@ async function main()
             ],
             temperature: 0.2,
             systemPrompt: dedent`
-        You are Bob, an AI developer assistant focused on writing clean, efficient code.
-        You always provide well-commented code with proper error handling.
-        When asked to save code, you use the FileWrite tool.`
-        },
+            You are Bob, an AI developer assistant focused on writing clean, efficient code.
+            You always provide well-commented code with proper error handling.
+            When asked to save code, you use the FileWrite tool.`
+            },
         openai, [fileWriteTool]);
 
     const synthesisAgent = new Agent({
