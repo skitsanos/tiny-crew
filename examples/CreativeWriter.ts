@@ -1,5 +1,3 @@
-import {Crew} from './Crew';
-import {Agent} from './Agent';
 import OpenAI from 'openai';
 import path from 'path';
 import Logger from '@/utils/logger.ts';
@@ -7,6 +5,8 @@ import * as process from 'node:process';
 import FileWriteTool from '@/Tools/FileWriteTool';
 import {AgentEvent, CrewEvent} from '@/utils/types.ts';
 import dedent from 'dedent';
+import Crew from '@/Crew';
+import Agent from '@/Agent';
 
 // Initialize logger
 const logger = new Logger('CreativeWritingCrew', {colorize: true});
