@@ -2,14 +2,12 @@
 
 TinyCrew is a TypeScript framework that orchestrates multiple AI agents to solve complex tasks collaboratively. It features:
 
-
-
 - **Agent System**: Specialized AI assistants with distinct goals and tools
 - **Crew Management**: Central coordinator that assigns tasks to appropriate agents
 - **Shared Memory**: Knowledge transfer between agents
-- **Tool Integration**: Extensible system for agents to interact with external services
+- **Tool Integration**: Extensible system for agents to interact with external services using OpenAI Responses API
 - **Event System**: Monitoring of task progress and memory updates
-- **Error Handling**: Robust recovery and reporting
+- **Error Handling**: Robust recovery and reporting with automatic retry mechanisms
 - **Logging**: Comprehensive activity tracking
 
 
@@ -37,7 +35,7 @@ From my perspective, TinyCrew represents a solid foundation for many agentic tas
 
 
 - It lacks long-term memory persistence between sessions
-- There's no built-in web browsing or search capability (though you could add this)
+- Built-in web scraping capabilities with security controls and domain filtering
 - The task planning is relatively simple compared to more sophisticated planning frameworks
 - It doesn't have built-in knowledge graph or vector storage for more complex information relationships
 - There's limited autonomous decision-making about which tasks to perform next
@@ -124,12 +122,20 @@ Would you like me to elaborate on any specific aspect of the memory system, such
 
 The evolution of TinyCrew includes several significant improvements:
 
+**API Modernization (Version 2.3.0+):**
+
+- **OpenAI Responses API Migration**: Upgraded from Chat Completions API to Responses API for better tool calling support
+- **Strict Mode Tool Schemas**: All tool parameters now properly defined for OpenAI's strict mode requirements
+- **Enhanced Tool Calling**: More reliable tool execution with proper argument parsing and validation
+- **Automatic Retry Logic**: Robust error handling with configurable retry mechanisms
+
 **Architectural Enhancements:**
 
 - Implemented a robust task management system with tracking, statuses, and dependencies
 - Added an event-driven architecture for better monitoring and communication
 - Created a more structured memory system with timestamps and metadata
 - Enhanced type safety throughout the codebase with comprehensive TypeScript interfaces
+- Consolidated file organization with all outputs directed to `data/` folder
 
 **Agent Capabilities:**
 
@@ -137,13 +143,15 @@ The evolution of TinyCrew includes several significant improvements:
 - Implemented agent specialization with detailed capabilities lists
 - Enhanced tool integration with validation and security features
 - Improved prompt engineering with customizable system prompts
+- Fixed infinite loop issues in tool calling workflow
 
 **Execution Flow:**
 
 - Added parallel task execution for improved efficiency
 - Implemented a task queue system for better workflow management
-- Enhanced error handling and recovery mechanisms
+- Enhanced error handling and recovery mechanisms with retry logic
 - Added more sophisticated agent selection logic
+- Streamlined tool calling process using Responses API format
 
 **Developer Experience:**
 
@@ -151,6 +159,7 @@ The evolution of TinyCrew includes several significant improvements:
 - Enhanced configuration options throughout the framework
 - Added better documentation and type definitions
 - Implemented a cleaner project structure for better organization
+- Comprehensive examples with consistent themes and proper API usage
 
 **Security & Reliability:**
 
@@ -158,6 +167,7 @@ The evolution of TinyCrew includes several significant improvements:
 - Implemented input validation for tool usage
 - Enhanced error reporting and handling
 - Added more robust environment variable management
+- Web scraping security controls with domain allowlists and blocklists
 
 These improvements transform TinyCrew from a basic proof-of-concept into a production-ready framework suitable for real-world applications, while maintaining the core simplicity that makes it approachable and extensible. 
 

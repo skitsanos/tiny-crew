@@ -20,7 +20,7 @@ describe('FileWriteTool path validation', () => {
   it('writes files inside the configured base directory', async () => {
     const result = await tool.use({
       filename: 'notes/safe.txt',
-      content: 'hello tiny crew',
+      content: 'hello tiny crew'
     });
 
     expect(result).toContain('Content successfully written');

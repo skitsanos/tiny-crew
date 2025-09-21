@@ -44,7 +44,10 @@ it('scrapes the page title when DOM parsing is enabled', async () => {
   const result = await scraper.use({
     url: `${baseUrl}/`,
     selector: 'title',
+    type: 'text',
     parseDom: true,
+    timeout: 10000,
+    userAgent: 'Mozilla/5.0 (compatible; TinyCrewBot/1.0; +https://github.com/skitsanos/tiny-crew)'
   });
 
   expect(result).toEqual(['Tiny Crew Test Page']);
@@ -54,6 +57,10 @@ it('returns text content with the default parser', async () => {
   const result = await scraper.use({
     url: `${baseUrl}/`,
     selector: 'h1[data-test="headline"]',
+    type: 'text',
+    parseDom: false,
+    timeout: 10000,
+    userAgent: 'Mozilla/5.0 (compatible; TinyCrewBot/1.0; +https://github.com/skitsanos/tiny-crew)'
   });
 
   expect(result).toEqual(['Hello from Tiny Crew']);
