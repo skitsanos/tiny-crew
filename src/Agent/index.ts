@@ -1,10 +1,14 @@
 import EventEmitter from 'events';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type OpenAI from 'openai';
+import type {
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionMessageToolCall
+} from 'openai/resources/chat/completions';
 import {
     type AgentConfig,
     AgentEvent,
-    type LlmConfig, type MemoryItem, type SharedMemory,
+    type LlmConfig, type SharedMemory,
     type Task,
     type TaskError,
     type TaskResult, TaskStatus,
@@ -12,6 +16,13 @@ import {
 } from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import dedent from 'dedent';
+
+type ChatToolCall = ChatCompletionMessageToolCall;
+type FunctionToolCall = ChatCompletionMessageFunctionToolCall;
+
+const isFunctionToolCall = (toolCall: ChatToolCall): toolCall is FunctionToolCall => {
+    return toolCall.type === 'function' && 'function' in toolCall;
+};
 
 /**
  * Enhanced Agent class with improved state management and tool handling
@@ -28,28 +39,26 @@ export class Agent extends EventEmitter {
     private readonly logger: Logger;
     private readonly client: OpenAI;
     private taskHistory: Map<string, Task>;
-    private metadata: Record<string, any>;
 
     /**
      * Create a new Agent instance
      */
     constructor(config: AgentConfig, client: OpenAI, tools: Tool[] = []) {
         super();
-        this.id = uuidv4();
+        this.id = randomUUID();
         this.name = config.name;
         this.goal = config.goal;
         this.expectedOutput = config.expectedOutput;
         this.systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
         this.capabilities = config.capabilities || [];
         this.llmConfig = {
-            model: config.model || 'gpt-4o',
+            model: config.model || 'gpt-4o-mini',
             temperature: config.temperature || 0.7,
             maxTokens: config.maxTokens || 1024
         };
         this.client = client;
         this.tools = new Map(tools.map(tool => [tool.name, tool]));
         this.taskHistory = new Map();
-        this.metadata = config.metadata || {};
         this.logger = new Logger(`Agent-${this.name}`);
 
         // Register default event handlers
@@ -163,7 +172,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * Generate a task ID
      */
     private generateTaskId(taskDescription: string): string {
-        return `task_${uuidv4().split('-')[0]}_${taskDescription.slice(0, 20).replace(/\W+/g, '_')}`;
+        return `task_${randomUUID().split('-')[0]}_${taskDescription.slice(0, 20).replace(/\W+/g, '_')}`;
     }
 
     /**
@@ -205,21 +214,6 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
             this.taskHistory.set(taskId, task);
         }
-    }
-
-    /**
-     * Extract information for the shared memory
-     */
-    private formatMemoryItem(task: Task, result: string): MemoryItem {
-        return {
-            key: task.id,
-            value: {
-                task: task.description,
-                result
-            },
-            agent: this.name,
-            timestamp: Date.now()
-        };
     }
 
     /**
@@ -336,11 +330,18 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
                 // Execute each tool call
                 for (const toolCall of responseMessage.tool_calls) {
-                    const { id, function: { name, arguments: argsString } } = toolCall;
+                    if (!isFunctionToolCall(toolCall)) {
+                        this.logger.warn('Skipping unsupported tool call type', { type: toolCall.type });
+                        continue;
+                    }
+
+                    const functionToolCall = toolCall as FunctionToolCall;
+                    const { id } = functionToolCall;
+                    const { name, arguments: argsString } = functionToolCall.function;
 
                     try {
                         // Parse tool arguments
-                        const args = JSON.parse(argsString);
+                        const args = JSON.parse(argsString ?? '{}');
 
                         // Execute the tool
                         const result = await this.executeTool(name, args);
@@ -350,7 +351,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                         expandedMessages.push({
                             role: 'assistant',
                             content: null,
-                            tool_calls: [toolCall]
+                            tool_calls: [functionToolCall]
                         });
 
                         expandedMessages.push({
@@ -367,7 +368,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                         expandedMessages.push({
                             role: 'assistant',
                             content: null,
-                            tool_calls: [toolCall]
+                            tool_calls: [functionToolCall]
                         });
 
                         expandedMessages.push({
@@ -406,7 +407,9 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     metadata: {
                         taskId: task.id,
                         model: this.llmConfig.model,
-                        toolsUsed: responseMessage.tool_calls.map(tc => tc.function.name)
+                        toolsUsed: responseMessage.tool_calls
+                            .filter(isFunctionToolCall)
+                            .map(tc => tc.function.name)
                     }
                 };
 

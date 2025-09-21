@@ -7,10 +7,12 @@ import FileWriteTool from '@/Tools/FileWriteTool';
 const logger = new Logger('FileWriteExample');
 
 // Initialize OpenAI client
-const openai = new OpenAI();
+const openai = new OpenAI({
+    baseURL: 'http://localhost:11434/v1'
+});
 
 // Define the base model
-const BASE_MODEL = 'gpt-4o';
+const BASE_MODEL = 'qwen2.5';
 
 const chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
@@ -21,24 +23,26 @@ const chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
 
 // Create a crew with a specific goal
 const crew = new Crew({
-    goal: 'Write a brief report on AI ethics and save it to a file',
-    model: BASE_MODEL,
+    goal: 'Write a detailed article on AI-driven warfare and save it to a file',
+    model: BASE_MODEL
 }, openai, chatHistory);
 
 // Create an agent with FileWriteTool
 const writer = new Agent({
     name: 'Writer',
-    goal: 'Create concise reports on AI-related topics and save them to files',
+    goal: 'Create concise articles on AI-driven warfare topics and save them to files',
     expectedOutput: 'A brief report saved to a file',
-    model: BASE_MODEL
+    model: BASE_MODEL,
+    temperature: 1.2,
+    maxTokens: 4096
 }, openai, [new FileWriteTool()]);
 
 // Add the agent to the crew
 crew.addAgent(writer);
 
 // Define the task
-const task = `Write a comprehensive and detailed report on the ethical considerations of AI development 
-and save it to a file named "ai_ethics_report.md". Use Markdown formatting.`;
+const task = `Write a comprehensive and detailed article on the ethical considerations of AI development 
+and save it to a file named "data/ai_warfare_report.md". Use Markdown formatting and minimum 5 paragraphs per section.`;
 
 async function runFileWriteExample()
 {

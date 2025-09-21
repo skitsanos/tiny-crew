@@ -150,7 +150,9 @@ async function runWebScrapeExample()
         logger.info('Executing tasks...');
         const results = await crew.executeAllTasks();
 
-        logger.info('All tasks completed. Generating final summary...');
+        logger.info('All tasks completed. Generating final summary...', {
+            taskCount: Object.keys(results).length
+        });
 
         // Generate final summary
         const summary = await crew.achieveCrewGoal();

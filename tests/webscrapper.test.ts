@@ -1,14 +1,60 @@
-import {expect, it} from 'bun:test'
-import {WebScrapeTool} from '@/Tools/WebScrapeTool';
+import { afterAll, beforeAll, expect, it } from 'bun:test';
+import { WebScrapeTool } from '@/Tools/WebScrapeTool';
 
-const scrapper = new WebScrapeTool()
+const scraper = new WebScrapeTool({
+  allowedDomains: ['localhost'],
+  blockedDomains: [],
+});
 
+const htmlFixture = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Tiny Crew Test Page</title>
+  </head>
+  <body>
+    <main>
+      <h1 data-test="headline">Hello from Tiny Crew</h1>
+    </main>
+  </body>
+</html>`;
 
-it('should return a valid html', async () => {
-  const html = await scrapper.use({
-      url: 'https://antropic.com',
-      selector: 'title',
-      parseDom: true,
-  })
-  expect(html).toBeDefined()
-})
+let server: ReturnType<typeof Bun.serve>;
+let baseUrl: string;
+
+beforeAll(() => {
+  server = Bun.serve({
+    port: 0,
+    fetch() {
+      return new Response(htmlFixture, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+        },
+      });
+    },
+  });
+
+  baseUrl = `http://localhost:${server.port}`;
+});
+
+afterAll(() => {
+  server.stop(true);
+});
+
+it('scrapes the page title when DOM parsing is enabled', async () => {
+  const result = await scraper.use({
+    url: `${baseUrl}/`,
+    selector: 'title',
+    parseDom: true,
+  });
+
+  expect(result).toEqual(['Tiny Crew Test Page']);
+});
+
+it('returns text content with the default parser', async () => {
+  const result = await scraper.use({
+    url: `${baseUrl}/`,
+    selector: 'h1[data-test="headline"]',
+  });
+
+  expect(result).toEqual(['Hello from Tiny Crew']);
+});

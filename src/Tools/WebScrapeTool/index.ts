@@ -1,5 +1,7 @@
 import { JSDOM } from 'jsdom';
 import * as cheerio from 'cheerio';
+import type {CheerioAPI} from 'cheerio';
+import type {Element as DomElement} from 'domhandler';
 import type { Tool, ToolSchema } from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 
@@ -180,9 +182,9 @@ interface WebScrapeArgs {
     /**
      * Extract links from the HTML document
      */
-    private extractLinks($: cheerio.Root, baseUrl: string): Array<{text: string, url: string}> {
+    private extractLinks($: CheerioAPI, baseUrl: string): Array<{text: string, url: string}> {
         const links: Array<{text: string, url: string}> = [];
-        $('a[href]').each((_, element) => {
+        $('a[href]').each((_, element: DomElement) => {
             const linkElement = $(element);
             const href = linkElement.attr('href') || '';
             const text = linkElement.text().trim();
@@ -202,10 +204,10 @@ interface WebScrapeArgs {
     /**
      * Extract images from the HTML document
      */
-    private extractImages($: cheerio.Root, baseUrl: string): Array<{alt: string, url: string}> {
+    private extractImages($: CheerioAPI, baseUrl: string): Array<{alt: string, url: string}> {
         const images: Array<{alt: string, url: string}> = [];
 
-        $('img[src]').each((_, element) => {
+        $('img[src]').each((_, element: DomElement) => {
             const imgElement = $(element);
             const src = imgElement.attr('src') || '';
             const alt = imgElement.attr('alt') || '';
@@ -225,17 +227,17 @@ interface WebScrapeArgs {
     /**
      * Extract tables from the HTML document
      */
-    private extractTables($: cheerio.Root): Array<Array<Array<string>>> {
+    private extractTables($: CheerioAPI): Array<Array<Array<string>>> {
         const tables: Array<Array<Array<string>>> = [];
 
-        $('table').each((_, tableEl) => {
+        $('table').each((_, tableEl: DomElement) => {
             const table: Array<Array<string>> = [];
 
-            $(tableEl).find('tr').each((_, rowEl) => {
+            $(tableEl).find('tr').each((_, rowEl: DomElement) => {
                 const row: Array<string> = [];
 
                 // Handle both th and td cells
-                $(rowEl).find('th, td').each((_, cellEl) => {
+                $(rowEl).find('th, td').each((_, cellEl: DomElement) => {
                     row.push($(cellEl).text().trim());
                 });
 

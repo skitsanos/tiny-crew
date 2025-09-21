@@ -1,9 +1,8 @@
 import { writeFile } from 'fs/promises';
-import {dirname, extname, isAbsolute, resolve} from 'path';
+import {dirname, extname, resolve, relative} from 'path';
 import type {Tool, ToolSchema} from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import { mkdir } from 'fs/promises';
-import logger from '@/utils/logger.ts';
 
 interface FileWriteArgs {
     filename: string;
@@ -26,9 +25,7 @@ export class FileWriteTool implements Tool {
         allowedExtensions?: string[],
         logger?: Logger
     } = {}) {
-        this.basePath = options.basePath || process.cwd();
-
-
+        this.basePath = resolve(options.basePath || process.cwd());
         this.allowedExtensions = options.allowedExtensions || ['.txt', '.md', '.json', '.js', '.ts', '.py', '.html', '.css'];
         this.logger = options.logger || new Logger('FileWriteTool');
     }
@@ -60,8 +57,21 @@ export class FileWriteTool implements Tool {
      * Validates the file path for security
      */
     private validateFilePath(filePath: string): boolean {
-        // Resolve the absolute path
         const absolutePath = resolve(this.basePath, filePath);
+
+        // Ensure the resolved path stays within the configured base path
+        const relativePath = relative(this.basePath, absolutePath);
+        const normalizedRelative = relativePath.replace(/\\/g, '/');
+        const escapesBase =
+            normalizedRelative.length === 0 ||
+            normalizedRelative === '.' ||
+            normalizedRelative.startsWith('..') ||
+            normalizedRelative.split('/').some(segment => segment === '..');
+
+        if (escapesBase) {
+            this.logger.warn(`Attempt to write outside of base path: ${absolutePath}`);
+            return false;
+        }
 
         // Check file extension is allowed
         const ext = extname(absolutePath).toLowerCase();

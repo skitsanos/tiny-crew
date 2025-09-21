@@ -1,7 +1,7 @@
 import type { Tool } from '@/utils/types.ts';
 
 export class Database {
-    async query(query: string): Promise<any> {
+    async query(_query: string): Promise<any> {
         return 'No results found';
     }
 }

@@ -23,16 +23,18 @@ export interface LoggerOptions
     outputFormat?: OutputFormat;
     format?: string;
     colorize?: boolean;
-    colorTheme?: {
-        levels: Record<string, string>;
-        timestamp?: string;
-        host?: string;
-        context?: string;
-        message?: string;
-        additionalField?: string;
-    };
+    colorTheme?: Partial<LoggerColorTheme> & { levels?: Record<string, string> };
     additionalFields?: Record<string, any>;
 }
+
+type LoggerColorTheme = {
+    levels: Record<string, string>;
+    timestamp: string;
+    host: string;
+    context: string;
+    message: string;
+    additionalField: string;
+};
 
 interface LogContent
 {
@@ -52,7 +54,7 @@ export class Logger
     private readonly outputFormat: OutputFormat;
     private readonly format: string;
     private readonly colorize: boolean;
-    private readonly colorTheme: Required<LoggerOptions['colorTheme']>;
+    private readonly colorTheme: LoggerColorTheme;
     private readonly additionalFields: Record<string, any>;
 
     constructor(context: string, options: LoggerOptions = {})
@@ -70,21 +72,7 @@ export class Logger
             outputFormat = LOG_OUTPUT_FORMAT as OutputFormat,
             format = LOG_FORMAT,
             colorize = LOG_COLORIZE === 'true',
-            colorTheme = {
-                levels: {
-                    TRACE: '#999',
-                    DEBUG: '#999',
-                    INFO: 'green',
-                    WARN: 'orange',
-                    ERROR: 'red',
-                    FATAL: 'darkred'
-                },
-                timestamp: '#888',
-                host: '#aabbcc',
-                context: '#99bbcc',
-                message: '#222',
-                additionalField: '#999'
-            },
+            colorTheme,
             additionalFields = {}
         } = options;
 
@@ -95,7 +83,32 @@ export class Logger
         this.outputFormat = outputFormat;
         this.format = format;
         this.colorize = colorize;
-        this.colorTheme = colorTheme as Required<LoggerOptions['colorTheme']>;
+        const defaultTheme: LoggerColorTheme = {
+            levels: {
+                TRACE: '#94A3B8',
+                DEBUG: '#38BDF8',
+                INFO: '#34D399',
+                WARN: '#FACC15',
+                ERROR: '#F87171',
+                FATAL: '#FB7185'
+            },
+            timestamp: '#9CA3AF',
+            host: '#60A5FA',
+            context: '#F97316',
+            message: '#E2E8F0',
+            additionalField: '#CBD5F5'
+        };
+
+        const mergedLevels = {
+            ...defaultTheme.levels,
+            ...(colorTheme?.levels ?? {})
+        };
+
+        this.colorTheme = {
+            ...defaultTheme,
+            ...colorTheme,
+            levels: mergedLevels
+        };
         this.additionalFields = additionalFields;
     }
 
@@ -106,29 +119,109 @@ export class Logger
             return text;
         }
 
-        // Support for Node.js and Bun environments
-        if (typeof Bun !== 'undefined')
+        const ansiSequence = this.resolveAnsiColor(color);
+        if (!ansiSequence)
         {
-            // @ts-ignore - Bun-specific API
-            return `${Bun.color(color, 'ansi') + text}\x1b[0m`;
+            return text;
         }
-        else
+
+        return `${ansiSequence}${text}\x1b[0m`;
+    }
+
+    private resolveAnsiColor(color: string): string | undefined
+    {
+        const trimmed = color.trim().toLowerCase();
+
+        const rgb = this.colorToRgb(trimmed);
+        if (!rgb)
         {
-            // Basic ANSI color support for Node.js
-            const ansiColors: Record<string, string> = {
-                'red': '\x1b[31m',
-                'green': '\x1b[32m',
-                'orange': '\x1b[33m',
-                'blue': '\x1b[34m',
-                'darkred': '\x1b[31m',
-                '#999': '\x1b[90m',
-                '#888': '\x1b[90m',
-                '#aabbcc': '\x1b[36m',
-                '#99bbcc': '\x1b[36m',
-                '#222': '\x1b[37m'
-            };
-            return `${ansiColors[color] || ''}${text}\x1b[0m`;
+            return undefined;
         }
+
+        const contrasted = this.ensureContrast(rgb);
+        return this.rgbToAnsi(contrasted);
+    }
+
+    private colorToRgb(color: string): { r: number; g: number; b: number } | undefined
+    {
+        if (color.startsWith('#'))
+        {
+            return this.hexToRgb(color);
+        }
+
+        const namedColors: Record<string, [number, number, number]> = {
+            red: [239, 68, 68],
+            green: [34, 197, 94],
+            blue: [59, 130, 246],
+            orange: [245, 158, 11],
+            yellow: [250, 204, 21],
+            magenta: [217, 70, 239],
+            cyan: [34, 211, 238],
+            white: [255, 255, 255],
+            darkred: [185, 28, 28],
+            gray: [156, 163, 175],
+            grey: [156, 163, 175]
+        };
+
+        const tuple = namedColors[color];
+        if (tuple)
+        {
+            const [r, g, b] = tuple;
+            return { r, g, b };
+        }
+
+        return undefined;
+    }
+
+    private hexToRgb(hexColor: string): { r: number; g: number; b: number } | undefined
+    {
+        const hex = hexColor.replace('#', '');
+
+        if (!(hex.length === 3 || hex.length === 6))
+        {
+            return undefined;
+        }
+
+        const normalized = hex.length === 3
+            ? [...hex].map((char) => `${char}${char}`).join('')
+            : hex;
+
+        const r = parseInt(normalized.slice(0, 2), 16);
+        const g = parseInt(normalized.slice(2, 4), 16);
+        const b = parseInt(normalized.slice(4, 6), 16);
+
+        if ([r, g, b].some((value) => Number.isNaN(value)))
+        {
+            return undefined;
+        }
+
+        return { r, g, b };
+    }
+
+    private ensureContrast({ r, g, b }: { r: number; g: number; b: number }): { r: number; g: number; b: number }
+    {
+        const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+        const target = 165;
+
+        if (brightness >= target)
+        {
+            return { r, g, b };
+        }
+
+        const factor = target / Math.max(brightness, 1);
+
+        const adjust = (value: number) => Math.min(255, Math.round(value * factor));
+
+        return {
+            r: adjust(r),
+            g: adjust(g),
+            b: adjust(b)
+        };
+    }
+
+    private rgbToAnsi({ r, g, b }: { r: number; g: number; b: number }): string
+    {
+        return `\x1b[38;2;${r};${g};${b}m`;
     }
 
     private shouldLog(level: LogLevel): boolean
@@ -195,6 +288,21 @@ export class Logger
                 {
                     Object.entries(arg).forEach(([key, value]) =>
                     {
+                        if (key === 'timestamp')
+                        {
+                            const formatted = typeof value === 'number'
+                                              ? dayjs(value).format('YYYY-MM-DD HH:mm:ss')
+                                              : String(value);
+                            logContent.eventTimestamp = formatted;
+                            return;
+                        }
+
+                        if (['level', 'host', 'context', 'message'].includes(key))
+                        {
+                            logContent[`event_${key}`] = value;
+                            return;
+                        }
+
                         logContent[key] = value;
                     });
                 }

@@ -1,8 +1,8 @@
-import { EventEmitter } from 'events';
-import { v4 as uuidv4 } from 'uuid';
+import {EventEmitter} from 'events';
+import {randomUUID} from 'crypto';
 import type OpenAI from 'openai';
 import type Agent from '@/Agent';
-import {type CrewConfig, CrewEvent, type LlmConfig, type SharedMemory} from '@/utils/types.ts';
+import {AgentEvent, type CrewConfig, CrewEvent, TaskStatus, type LlmConfig, type SharedMemory} from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import dedent from 'dedent';
 
@@ -20,7 +20,6 @@ export class Crew extends EventEmitter {
     private readonly chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
     private readonly taskAssignmentPrompt: string;
     private readonly summarizationPrompt: string;
-    private metadata: Record<string, any>;
     private pendingTasks: string[];
 
     /**
@@ -32,17 +31,16 @@ export class Crew extends EventEmitter {
         chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
     ) {
         super();
-        this.id = uuidv4();
+        this.id = randomUUID();
         this.goal = config.goal;
         this.agents = new Map();
         this.sharedMemory = {};
         this.client = client;
         this.chatHistory = [...chatHistory];
         this.pendingTasks = [];
-        this.metadata = config.metadata || {};
 
         this.llmConfig = {
-            model: config.model || 'gpt-4o',
+            model: config.model || 'gpt-4o-mini',
             temperature: config.temperature || 0.5,
             maxTokens: config.maxTokens || 1024
         };
@@ -115,8 +113,23 @@ export class Crew extends EventEmitter {
         this.agents.set(agent.getName(), agent);
 
         // Listen for agent events to update shared memory
-        agent.on('taskComplete', (result) => {
-            this.updateSharedMemory(result.agent, result.task, result.result);
+        agent.on(AgentEvent.TASK_COMPLETED, (result) => {
+            this.updateSharedMemory(result.agent, result.task, result.result, {
+                status: TaskStatus.COMPLETED,
+                timestamp: result.timestamp,
+                taskId: result.metadata?.taskId,
+                toolsUsed: result.metadata?.toolsUsed
+            });
+        });
+
+        agent.on(AgentEvent.TASK_FAILED, (error) => {
+            const errorMessage = error.error instanceof Error ? error.error.message : String(error.error);
+            this.logger.warn(`Task failed for agent ${error.agent}: ${error.task}`, { error: errorMessage });
+            this.updateSharedMemory(error.agent, error.task, `Task failed: ${errorMessage}`, {
+                status: TaskStatus.FAILED,
+                timestamp: error.timestamp,
+                taskId: error.metadata?.taskId
+            });
         });
     }
 
@@ -158,7 +171,7 @@ export class Crew extends EventEmitter {
     /**
      * Update the shared memory
      */
-    private updateSharedMemory(agent: string, task: string, result: string): void {
+    private updateSharedMemory(agent: string, task: string, result: string, metadata: Record<string, any> = {}): void {
         const itemKey = `task_${task.slice(0, 20).replace(/\W+/g, '_')}`;
 
         this.sharedMemory[itemKey] = {
@@ -169,7 +182,7 @@ export class Crew extends EventEmitter {
             },
             agent,
             timestamp: Date.now(),
-            metadata: {}
+            metadata
         };
 
         this.logger.info('Shared memory updated:', { task, agent });
@@ -181,7 +194,7 @@ export class Crew extends EventEmitter {
                 key: itemKey,
                 agent,
                 task,
-                timestamp: Date.now()
+                timestamp: new Date().toISOString()
             }
         });
     }
@@ -289,8 +302,7 @@ export class Crew extends EventEmitter {
 
         for (const task of this.pendingTasks) {
             try {
-                const result = await this.assignTask(task);
-                results[task] = result;
+                results[task] = await this.assignTask(task);
             } catch (error) {
                 this.logger.error(`Error executing task "${task}":`, error);
                 results[task] = `Error: ${error instanceof Error ? error.message : String(error)}`;

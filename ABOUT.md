@@ -10,6 +10,8 @@ While Tiny Crew draws inspiration from existing frameworks like CrewAI, it chart
 
 Tiny Crew is implemented in TypeScript, providing strong typing and enhanced developer experience. Moreover, it's designed to run natively on Bun, a fast all-in-one JavaScript runtime, which offers significant performance improvements over traditional Node.js environments.
 
+The framework targets modern platforms only: Bun 1.2.x and Node.js 22 (or newer) are the minimum supported runtimes to ensure access to native `fetch`, streaming primitives, and other modern APIs relied upon inside the toolkit.
+
 ## Key Features that Set Tiny Crew Apart
 
 1. **LLM-Driven Agent Selection**: Unlike traditional systems where tasks are assigned based on predefined rules or simple matching algorithms, Tiny Crew uses an LLM to analyze the task requirements and agent capabilities in real-time, making sophisticated decisions about task allocation.

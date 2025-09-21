@@ -58,7 +58,7 @@ For more complex scenarios involving dynamic planning, autonomous exploration, o
 
 ## Prerequisites
 
-- Node.js (v16+) or Bun
+- Bun (v1.2.x or newer) or Node.js (v22+)
 - TypeScript
 - OpenAI API key or compatible API (e.g., Groq, Ollama, etc.)
 
@@ -99,8 +99,8 @@ For more complex scenarios involving dynamic planning, autonomous exploration, o
 import { Crew } from './Crew';
 import { Agent } from './Agent';
 import OpenAI from 'openai';
-import { Logger } from './Logger';
-import { FileWriteTool } from './tools/FileWriteTool';
+import Logger from './utils/logger';
+import { FileWriteTool } from './Tools/FileWriteTool';
 import dotenv from 'dotenv';
 
 // Load environment variables
