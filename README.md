@@ -60,7 +60,7 @@ For more complex scenarios involving dynamic planning, autonomous exploration, o
 
 - Bun (v1.2.x or newer) or Node.js (v22+)
 - TypeScript
-- OpenAI API key or compatible API (e.g., Groq, Ollama, etc.)
+- OpenAI API key (uses OpenAI Responses API)
 
 ## Installation
 
@@ -103,6 +103,54 @@ TinyCrew ships with a flexible logger that works in both Bun and Node runtimes. 
 - `LOG_COLORIZE=false` disables ANSI colours when running in environments that don't support them.
 
 All options can also be overridden programmatically when instantiating `new Logger(...)`.
+
+## API Changes
+
+**Version 2.3.0+** introduces significant updates to improve reliability and performance:
+
+### OpenAI Responses API Migration
+
+TinyCrew now uses the OpenAI Responses API instead of the Chat Completions API for better tool calling support:
+
+- **Improved Tool Calling**: More reliable tool execution with proper argument parsing
+- **Strict Mode Support**: All tool schemas now require complete parameter definitions
+- **Enhanced Error Handling**: Automatic retry logic for robust operation
+- **Better Logging**: Comprehensive debugging information for troubleshooting
+
+### File Organization
+
+All example outputs are now consolidated in the `data/` directory:
+
+- **Consistent Output Location**: All agents save files to `./data/` by default
+- **Organized Storage**: Examples create organized file structures
+- **Easy Cleanup**: Single directory to manage generated content
+
+### Tool Schema Requirements
+
+When creating custom tools, all parameters must be marked as required for strict mode compatibility:
+
+```typescript
+// ✅ Correct: All parameters required with defaults
+parameters: {
+  type: 'object',
+  properties: {
+    url: { type: 'string', description: 'URL to process' },
+    format: { type: 'string', description: 'Output format', default: 'json' }
+  },
+  required: ['url', 'format'] // All parameters must be required
+}
+
+// ❌ Incorrect: Optional parameters not supported in strict mode
+parameters: {
+  type: 'object',
+  properties: {
+    url: { type: 'string', description: 'URL to process' },
+    format: { type: 'string', description: 'Output format' } // Optional
+  },
+  required: ['url'] // Some parameters missing from required array
+}
+```
+
 ## Usage
 
 ### Basic Example
@@ -128,7 +176,7 @@ async function main() {
   
   // Create a file writing tool
   const fileWriteTool = new FileWriteTool({
-    basePath: process.env.FILE_WRITE_BASE_PATH || './output',
+    basePath: process.env.FILE_WRITE_BASE_PATH || './data',
     allowedExtensions: ['.txt', '.md', '.json', '.py']
   });
 
@@ -232,7 +280,7 @@ At its core, the shared memory system in TinyCrew is what allows multiple agents
    ```typescript
    private updateSharedMemory(agent: string, task: string, result: string): void {
      const itemKey = `task_${task.slice(0, 20).replace(/\W+/g, '_')}`;
-     
+
      this.sharedMemory[itemKey] = {
        key: itemKey,
        value: { task, result },
@@ -240,7 +288,7 @@ At its core, the shared memory system in TinyCrew is what allows multiple agents
        timestamp: Date.now(),
        metadata: {}
      };
-     
+
      this.emit(CrewEvent.MEMORY_UPDATED, { ... });
    }
    ```
@@ -248,15 +296,17 @@ At its core, the shared memory system in TinyCrew is what allows multiple agents
 3. **Access Pattern**: When a new task is assigned, the agent receives the current state of shared memory:
 
    ```typescript
-   const messages: OpenAI.ChatCompletionMessageParam[] = [
-     { role: 'system', content: this.systemPrompt },
-     { 
-       role: 'system', 
-       content: `Shared knowledge: ${JSON.stringify(Object.values(sharedMemory)
-                                 .map(item => ({ ... }))}`
-     },
-     // Other messages...
-   ];
+   // Using the Responses API format
+   const conversation: ResponseInputItem[] = [];
+   conversation.push(this.buildMessage('system', this.systemPrompt));
+
+   if (Object.keys(sharedMemory).length > 0) {
+     conversation.push(this.buildMessage(
+       'system',
+       `Shared knowledge: ${JSON.stringify(Object.values(sharedMemory)
+                           .map(item => ({ task: item.key, agent: item.agent, result: item.value })))}`
+     ));
+   }
    ```
 
 4. **Event Notification**: Memory updates trigger events that the crew and other components can listen for:
@@ -405,9 +455,14 @@ export class CustomTool implements Tool {
         param1: {
           type: 'string',
           description: 'Description of parameter 1'
+        },
+        param2: {
+          type: 'boolean',
+          description: 'Description of parameter 2',
+          default: false
         }
       },
-      required: ['param1']
+      required: ['param1', 'param2'] // All parameters required for strict mode
     }
   };
   
