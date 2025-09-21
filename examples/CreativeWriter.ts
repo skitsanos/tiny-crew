@@ -15,32 +15,21 @@ async function runCreativeWritingExample()
 {
     logger.info('Initializing Creative Writing Crew...');
 
-    const {
-        GROQ_API_KEY,
-        GROQ_API_URL
-    } = process.env;
-
     // Configure OpenAI client
-    if (!GROQ_API_KEY)
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey)
     {
-        logger.fatal('GROQ_API_KEY environment variable not set');
-        process.exit(1);
-    }
-
-    if (!GROQ_API_URL)
-    {
-        logger.fatal('GROQ_API_URL environment variable not set');
+        logger.fatal('OPENAI_API_KEY environment variable not set');
         process.exit(1);
     }
 
     const openai = new OpenAI({
-        apiKey: GROQ_API_KEY,
-        baseURL: GROQ_API_URL
+        apiKey: apiKey
     });
-    const baseModel = process.env.LLM_MODEL || 'llama-3.3-70b-versatile';
+    const baseModel = process.env.LLM_MODEL || 'gpt-4o-mini';
 
     // Create output directory for story files
-    const outputDir = path.join(process.cwd(), 'output', 'story');
+    const outputDir = path.join(process.cwd(), 'data');
 
     // Initialize tools
     const fileWriteTool = new FileWriteTool({
@@ -244,7 +233,7 @@ async function runCreativeWritingExample()
             content: reflection
         });
 
-        logger.info('Creative writing process complete! Files saved to output/story directory');
+        logger.info('Creative writing process complete! Files saved to data directory');
         logger.info(`Final story saved as "final_story.md"`);
         logger.info(`Author's reflection saved as "authors_reflection.md"`);
 
@@ -268,7 +257,7 @@ runCreativeWritingExample()
     {
         console.log('\n=== FINAL STORY PREVIEW (First 500 chars) ===\n');
         console.log(story.substring(0, 500) + '...');
-        console.log('\nFull story available in output/story/final_story.md');
+        console.log('\nFull story available in data/final_story.md');
     })
     .catch(error =>
     {

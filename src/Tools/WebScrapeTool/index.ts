@@ -7,11 +7,11 @@ import Logger from '@/utils/logger.ts';
 
 interface WebScrapeArgs {
     url: string;
-    selector?: string;
-    type?: 'text' | 'html' | 'table' | 'links' | 'images' | 'metadata';
-    parseDom?: boolean;
-    timeout?: number;
-    userAgent?: string;
+    selector: string;
+    type: 'text' | 'html' | 'table' | 'links' | 'images' | 'metadata';
+    parseDom: boolean;
+    timeout: number;
+    userAgent: string;
 }
 
 /**
@@ -60,27 +60,32 @@ interface WebScrapeArgs {
                 },
                 selector: {
                     type: 'string',
-                    description: 'CSS selector to extract specific elements (optional)'
+                    description: 'CSS selector to extract specific elements. Use "body" or "*" for all content if no specific selector needed.',
+                    default: 'body'
                 },
                 type: {
                     type: 'string',
                     enum: ['text', 'html', 'table', 'links', 'images', 'metadata'],
-                    description: 'Type of content to extract (default: text)'
+                    description: 'Type of content to extract',
+                    default: 'text'
                 },
                 parseDom: {
                     type: 'boolean',
-                    description: 'Whether to parse the page using DOM (default: false)'
+                    description: 'Whether to parse the page using DOM',
+                    default: false
                 },
                 timeout: {
                     type: 'number',
-                    description: 'Request timeout in milliseconds'
+                    description: 'Request timeout in milliseconds',
+                    default: 10000
                 },
                 userAgent: {
                     type: 'string',
-                    description: 'Custom User-Agent string'
+                    description: 'Custom User-Agent string',
+                    default: 'Mozilla/5.0 (compatible; TinyCrewBot/1.0; +https://github.com/skitsanos/tiny-crew)'
                 }
             },
-            required: ['url']
+            required: ['url', 'selector', 'type', 'parseDom', 'timeout', 'userAgent']
         }
     };
 
@@ -271,7 +276,14 @@ interface WebScrapeArgs {
     /**
      * Extract content from a URL with various options using native fetch
      */
-    public async use({ url, selector, type = 'text', parseDom = false, timeout, userAgent }: WebScrapeArgs): Promise<any> {
+    public async use({
+        url,
+        selector = 'body',
+        type = 'text',
+        parseDom = false,
+        timeout = this.defaultTimeout,
+        userAgent = this.defaultUserAgent
+    }: WebScrapeArgs): Promise<any> {
         this.logger.debug(`Scraping URL: ${url}`);
 
         if (!this.validateInput({ url, selector, type, parseDom, timeout, userAgent })) {

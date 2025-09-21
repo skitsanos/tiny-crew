@@ -25,6 +25,8 @@ export interface LoggerOptions
     colorize?: boolean;
     colorTheme?: Partial<LoggerColorTheme> & { levels?: Record<string, string> };
     additionalFields?: Record<string, any>;
+    dualOutput?: boolean;
+    jsonStream?: 'stdout' | 'stderr';
 }
 
 type LoggerColorTheme = {
@@ -56,6 +58,8 @@ export class Logger
     private readonly colorize: boolean;
     private readonly colorTheme: LoggerColorTheme;
     private readonly additionalFields: Record<string, any>;
+    private readonly dualOutput: boolean;
+    private readonly jsonStream: 'stdout' | 'stderr';
 
     constructor(context: string, options: LoggerOptions = {})
     {
@@ -64,7 +68,9 @@ export class Logger
             LOG_LEVEL = 'INFO',
             LOG_OUTPUT_FORMAT = 'text',
             LOG_FORMAT = '{timestamp} [{level}] {host} {context} {message}',
-            LOG_COLORIZE = 'true'
+            LOG_COLORIZE = 'true',
+            LOG_DUAL_OUTPUT = 'false',
+            LOG_JSON_STREAM = 'stdout'
         } = process.env;
 
         const {
@@ -73,7 +79,9 @@ export class Logger
             format = LOG_FORMAT,
             colorize = LOG_COLORIZE === 'true',
             colorTheme,
-            additionalFields = {}
+            additionalFields = {},
+            dualOutput = LOG_DUAL_OUTPUT === 'true',
+            jsonStream = LOG_JSON_STREAM === 'stderr' ? 'stderr' : 'stdout'
         } = options;
 
         this.context = context;
@@ -95,8 +103,8 @@ export class Logger
             timestamp: '#9CA3AF',
             host: '#60A5FA',
             context: '#F97316',
-            message: '#E2E8F0',
-            additionalField: '#CBD5F5'
+            message: '#888888',
+            additionalField: '#999999'
         };
 
         const mergedLevels = {
@@ -110,6 +118,8 @@ export class Logger
             levels: mergedLevels
         };
         this.additionalFields = additionalFields;
+        this.dualOutput = dualOutput;
+        this.jsonStream = jsonStream;
     }
 
     private getColoredText(text: string, color?: string): string
@@ -313,30 +323,69 @@ export class Logger
             });
         }
 
-        // Format the message for text output
+        const structuredLog = this.prepareStructuredLog(logContent);
+
         if (this.outputFormat === 'text')
         {
             const formattedLog = this.formatMessage(logContent);
             await this.writeToOutput(formattedLog + '\n');
+
+            if (this.dualOutput)
+            {
+                await this.writeToOutput(JSON.stringify(structuredLog) + '\n', this.jsonStream);
+            }
         }
         else if (this.outputFormat === 'json')
         {
-            await this.writeToOutput(JSON.stringify(logContent) + '\n');
+            await this.writeToOutput(JSON.stringify(structuredLog) + '\n');
         }
     }
 
-    private async writeToOutput(text: string): Promise<void>
+    private async writeToOutput(text: string, stream: 'stdout' | 'stderr' = 'stdout'): Promise<void>
     {
         if (typeof Bun !== 'undefined')
         {
             // Bun environment
-            await Bun.write(Bun.stdout, text);
+            const bunStream = stream === 'stderr' ? Bun.stderr : Bun.stdout;
+            await Bun.write(bunStream, text);
         }
         else
         {
             // Node.js environment
-            process.stdout.write(text);
+            const nodeStream = stream === 'stderr' ? process.stderr : process.stdout;
+            nodeStream.write(text);
         }
+    }
+
+    private prepareStructuredLog(logContent: LogContent): Record<string, any>
+    {
+        const cloneValue = (value: any): any =>
+        {
+            if (value instanceof Error)
+            {
+                return {
+                    name: value.name,
+                    message: value.message,
+                    stack: value.stack
+                };
+            }
+
+            if (Array.isArray(value))
+            {
+                return value.map(cloneValue);
+            }
+
+            if (value && typeof value === 'object')
+            {
+                return Object.fromEntries(
+                    Object.entries(value).map(([key, val]) => [key, cloneValue(val)])
+                );
+            }
+
+            return value;
+        };
+
+        return cloneValue(logContent);
     }
 
     // Public logging methods
@@ -379,7 +428,9 @@ export class Logger
             format: this.format,
             colorize: this.colorize,
             colorTheme: this.colorTheme,
-            additionalFields: this.additionalFields
+            additionalFields: this.additionalFields,
+            dualOutput: this.dualOutput,
+            jsonStream: this.jsonStream
         });
     }
 }

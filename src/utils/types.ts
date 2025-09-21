@@ -84,6 +84,12 @@ export interface Tool {
     use: (args: any) => Promise<any>;
     validateInput?: (args: any) => boolean | Promise<boolean>;
     getCapabilities?: () => string[];
+    annotateResult?: (result: any) => ToolResultMetadata;
+}
+
+export interface ToolResultMetadata {
+    success: boolean;
+    message?: string;
 }
 
 // Crew-related interfaces
@@ -144,4 +150,12 @@ export interface TinyCrewPlugin {
     hooks: {
         [key: string]: (...args: any[]) => any | Promise<any>;
     };
+}
+
+export type ConversationRole = 'system' | 'user' | 'assistant' | 'developer';
+
+export interface ConversationMessage {
+    role: ConversationRole;
+    content: string;
+    name?: string;
 }

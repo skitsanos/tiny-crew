@@ -1,6 +1,8 @@
 import type OpenAI from 'openai';
 import type { Tool, ToolSchema } from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
+import type { Response } from 'openai/resources/responses/responses';
+import { withRetry } from '@/utils/retry.ts';
 
 interface TextPromptConfig {
     name: string;
@@ -137,17 +139,21 @@ export class TextPromptTool implements Tool {
             const populatedPrompt = this.populateTemplate(this.promptTemplate, args);
 
             // Make the LLM request
-            const response = await this.client.chat.completions.create({
-                model: this.model,
-                messages: [
-                    { role: 'system', content: this.systemPrompt },
-                    { role: 'user', content: populatedPrompt }
-                ],
-                temperature: this.temperature,
-                max_tokens: this.maxTokens
-            });
+            const response = await withRetry(
+                () => this.client.responses.create({
+                    model: this.model,
+                    input: [
+                        { role: 'system', content: this.systemPrompt },
+                        { role: 'user', content: populatedPrompt }
+                    ],
+                    temperature: this.temperature,
+                    ...(this.maxTokens ? { max_output_tokens: this.maxTokens } : {})
+                }),
+                this.logger,
+                `text_prompt_tool:${this.name}`
+            );
 
-            const result = response.choices[0].message.content;
+            const result = this.extractTextFromResponse(response);
             if (!result) {
                 throw new Error('Empty response from LLM');
             }
@@ -162,6 +168,25 @@ export class TextPromptTool implements Tool {
             this.logger.error(`Error processing text with ${this.name}:`, error);
             throw error;
         }
+    }
+
+    private extractTextFromResponse(response: Response): string {
+        if (response.output_text && response.output_text.trim().length > 0) {
+            return response.output_text;
+        }
+
+        const texts: string[] = [];
+        for (const item of response.output ?? []) {
+            if (item.type === 'message') {
+                for (const content of item.content) {
+                    if (content.type === 'output_text') {
+                        texts.push(content.text);
+                    }
+                }
+            }
+        }
+
+        return texts.join('\n').trim();
     }
 }
 

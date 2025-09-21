@@ -89,8 +89,20 @@ For more complex scenarios involving dynamic planning, autonomous exploration, o
    OPENAI_API_KEY=your_api_key_here
    LLM_MODEL=gpt-4o
    LOG_LEVEL=INFO
+   LOG_DUAL_OUTPUT=false # set to true to mirror structured JSON logs
+   LOG_JSON_STREAM=stdout # use 'stderr' to send JSON logs to stderr
    ```
 
+### Logging configuration
+
+TinyCrew ships with a flexible logger that works in both Bun and Node runtimes. By default it prints colourised text logs, but you can mirror structured JSON alongside them for ingestion into log pipelines:
+
+- `LOG_DUAL_OUTPUT=true` will emit the regular text line **and** a JSON line for each event.
+- `LOG_JSON_STREAM=stderr` can be set if you want the JSON payloads written to stderr while keeping the colour text on stdout (default is stdout for both).
+- `LOG_OUTPUT_FORMAT=json` switches entirely to JSON-only logging.
+- `LOG_COLORIZE=false` disables ANSI colours when running in environments that don't support them.
+
+All options can also be overridden programmatically when instantiating `new Logger(...)`.
 ## Usage
 
 ### Basic Example

@@ -1,6 +1,6 @@
 import { writeFile } from 'fs/promises';
 import {dirname, extname, resolve, relative} from 'path';
-import type {Tool, ToolSchema} from '@/utils/types.ts';
+import type {Tool, ToolResultMetadata, ToolSchema} from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import { mkdir } from 'fs/promises';
 
@@ -46,10 +46,11 @@ export class FileWriteTool implements Tool {
                 },
                 overwrite: {
                     type: 'boolean',
-                    description: 'Whether to overwrite the file if it exists'
+                    description: 'Whether to overwrite the file if it exists',
+                    default: true
                 }
             },
-            required: ['filename', 'content']
+            required: ['filename', 'content', 'overwrite']
         }
     };
 
@@ -86,7 +87,9 @@ export class FileWriteTool implements Tool {
     /**
      * Validates all input arguments
      */
-    public validateInput(args: FileWriteArgs): boolean {
+    public validateInput(rawArgs: FileWriteArgs | Record<string, any>): boolean {
+        const args = this.normalizeArgs(rawArgs);
+
         if (!args.filename) {
             this.logger.warn('Invalid filename provided');
             return false;
@@ -110,7 +113,9 @@ export class FileWriteTool implements Tool {
     /**
      * Write content to a file
      */
-    public async use({ filename, content, overwrite = true }: FileWriteArgs): Promise<string> {
+    public async use(rawArgs: FileWriteArgs | Record<string, any>): Promise<string> {
+        const { filename, content, overwrite } = this.normalizeArgs(rawArgs);
+
         this.logger.debug(`Writing to file: ${filename}, ${this.basePath}`);
 
         if (!this.validateInput({ filename, content, overwrite })) {
@@ -138,6 +143,55 @@ export class FileWriteTool implements Tool {
             this.logger.error(`Error writing to file: ${error}`);
             throw error;
         }
+    }
+
+    public annotateResult(): ToolResultMetadata {
+        return { success: true };
+    }
+
+    private isNonEmptyString(value: unknown): value is string
+    {
+        return typeof value === 'string' && value.trim().length > 0;
+    }
+
+    private normalizeArgs(raw: FileWriteArgs | Record<string, any>): FileWriteArgs
+    {
+        if (raw && typeof raw === 'object')
+        {
+            const candidate = raw as Record<string, unknown>;
+            const filenameCandidate = candidate.filename ?? candidate.fileName ?? candidate.path ?? candidate.filepath ?? candidate.file_path;
+            const contentCandidate = candidate.content ?? candidate.text ?? candidate.data;
+            const overwriteCandidate = candidate.overwrite ?? candidate.force ?? candidate.replace;
+
+            const filename = this.isNonEmptyString(filenameCandidate) ? filenameCandidate.trim() : '';
+
+            let content: string = '';
+            if (this.isNonEmptyString(contentCandidate))
+            {
+                content = contentCandidate;
+            }
+            else if (contentCandidate !== undefined)
+            {
+                try
+                {
+                    content = JSON.stringify(contentCandidate, null, 2);
+                }
+                catch
+                {
+                    content = String(contentCandidate);
+                }
+            }
+
+            const overwrite = overwriteCandidate === undefined ? true : Boolean(overwriteCandidate);
+
+            return { filename, content, overwrite };
+        }
+
+        return {
+            filename: '',
+            content: '',
+            overwrite: true
+        };
     }
 }
 

@@ -38,7 +38,7 @@ async function runWebScrapeExample()
     });
 
     const fileWriteTool = new FileWriteTool({
-        basePath: './output/web-scrape',
+        basePath: './data',
         allowedExtensions: [
             '.txt',
             '.md',
@@ -50,7 +50,7 @@ async function runWebScrapeExample()
     // Create a crew with a specific goal
     const crew = new Crew(
         {
-            goal: 'Research, analyze, and summarize information about recent AI advancements',
+            goal: 'Research, analyze, and summarize information about AI-assisted warfare technologies',
             model: baseModel,
             temperature: 0.5
         },
@@ -128,7 +128,7 @@ async function runWebScrapeExample()
     try
     {
         // Define research topic
-        const topic = process.env.RESEARCH_TOPIC || 'recent advancements in generative AI';
+        const topic = process.env.RESEARCH_TOPIC || 'AI-assisted warfare technologies and autonomous military systems';
 
         // Define tasks
         logger.info(`Starting research on: ${topic}`);

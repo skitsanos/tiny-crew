@@ -1,4 +1,4 @@
-
+articles/
 data/
 
 # Logs
@@ -174,3 +174,5 @@ dist
 
 # Finder (MacOS) folder config
 .DS_Store
+
+TODO.md

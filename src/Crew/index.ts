@@ -2,9 +2,15 @@ import {EventEmitter} from 'events';
 import {randomUUID} from 'crypto';
 import type OpenAI from 'openai';
 import type Agent from '@/Agent';
-import {AgentEvent, type CrewConfig, CrewEvent, TaskStatus, type LlmConfig, type SharedMemory} from '@/utils/types.ts';
+import {AgentEvent, type ConversationMessage, type CrewConfig, CrewEvent, TaskStatus, type LlmConfig, type SharedMemory} from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import dedent from 'dedent';
+import type {
+    Response,
+    ResponseInputItem,
+    ResponseOutputMessage
+} from 'openai/resources/responses/responses';
+import {withRetry} from '@/utils/retry.ts';
 
 /**
  * Enhanced Crew class for agent orchestration
@@ -17,7 +23,7 @@ export class Crew extends EventEmitter {
     private readonly logger: Logger;
     private readonly llmConfig: LlmConfig;
     private readonly client: OpenAI;
-    private readonly chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+    private readonly chatHistory: ConversationMessage[];
     private readonly taskAssignmentPrompt: string;
     private readonly summarizationPrompt: string;
     private pendingTasks: string[];
@@ -28,7 +34,7 @@ export class Crew extends EventEmitter {
     constructor(
         config: CrewConfig,
         client: OpenAI,
-        chatHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
+        chatHistory: ConversationMessage[] = []
     ) {
         super();
         this.id = randomUUID();
@@ -157,14 +163,14 @@ export class Crew extends EventEmitter {
     /**
      * Update the chat history
      */
-    updateChatHistory(message: OpenAI.Chat.Completions.ChatCompletionMessageParam): void {
+    updateChatHistory(message: ConversationMessage): void {
         this.chatHistory.push(message);
     }
 
     /**
      * Get the chat history
      */
-    getChatHistory(): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+    getChatHistory(): ConversationMessage[] {
         return [...this.chatHistory];
     }
 
@@ -224,14 +230,23 @@ export class Crew extends EventEmitter {
                            .replace('{agents}', agentDescriptions);
 
         try {
-            const response = await this.client.chat.completions.create({
-                model: this.llmConfig.model,
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.3,
-                max_tokens: 50 // Short response needed
-            });
+            const response = await withRetry(
+                () => this.client.responses.create({
+                    model: this.llmConfig.model,
+                    input: [
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ],
+                    temperature: 0.3,
+                    max_output_tokens: 50
+                }),
+                this.logger,
+                'crew:agent-selection'
+            );
 
-            const chosenAgentName = response.choices[0].message.content?.trim();
+            const chosenAgentName = this.extractTextFromResponse(response)?.trim();
 
             if (chosenAgentName === 'NONE') {
                 this.logger.warn(`No suitable agent found for task: ${task}`);
@@ -360,16 +375,22 @@ export class Crew extends EventEmitter {
     `;
 
         try {
-            const response = await this.client.chat.completions.create({
-                model: this.llmConfig.model,
-                messages: [
-                    ...this.chatHistory,
-                    { role: 'user', content: finalAnswerPrompt }
-                ],
-                temperature: 0.3
-            });
+            const input: ResponseInputItem[] = [
+                ...this.chatHistory.map(message => this.toResponseInputItem(message)),
+                this.buildMessage('user', finalAnswerPrompt)
+            ];
 
-            const finalResponse = response.choices[0].message.content;
+            const response = await withRetry(
+                () => this.client.responses.create({
+                    model: this.llmConfig.model,
+                    input,
+                    temperature: 0.3
+                }),
+                this.logger,
+                'crew:final-response'
+            );
+
+            const finalResponse = this.extractTextFromResponse(response);
             if (finalResponse) {
                 // Add the final response to shared memory
                 this.updateSharedMemory('AI Assistant', 'Final Answer', finalResponse);
@@ -406,13 +427,19 @@ export class Crew extends EventEmitter {
                                   .replace('{results}', allResults);
 
         try {
-            const response = await this.client.chat.completions.create({
-                model: this.llmConfig.model,
-                messages: [{ role: 'user', content: summaryPrompt }],
-                temperature: 0.5
-            });
+            const response = await withRetry(
+                () => this.client.responses.create({
+                    model: this.llmConfig.model,
+                    input: [
+                        this.buildMessage('user', summaryPrompt)
+                    ],
+                    temperature: 0.5
+                }),
+                this.logger,
+                'crew:summary'
+            );
 
-            const summary = response.choices[0].message.content;
+            const summary = this.extractTextFromResponse(response);
             if (summary) {
                 // Store the summary in shared memory
                 this.updateSharedMemory('AI Assistant', 'Final Summary', summary);
@@ -440,6 +467,67 @@ export class Crew extends EventEmitter {
 
             throw error;
         }
+    }
+
+    private buildMessage(role: 'user' | 'system' | 'developer', content: string): ResponseInputItem {
+        return {
+            type: 'message',
+            role,
+            content: [
+                {
+                    type: 'input_text',
+                    text: content
+                }
+            ]
+        };
+    }
+
+    private buildAssistantMessage(content: string): ResponseOutputMessage {
+        return {
+            id: `msg_${randomUUID()}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [
+                {
+                    type: 'output_text',
+                    text: content,
+                    annotations: [],
+                    logprobs: []
+                }
+            ]
+        };
+    }
+
+    private toResponseInputItem(message: ConversationMessage): ResponseInputItem {
+        if (message.role === 'assistant') {
+            return this.buildAssistantMessage(message.content);
+        }
+
+        if (message.role === 'developer') {
+            return this.buildMessage('developer', message.content);
+        }
+
+        return this.buildMessage(message.role, message.content);
+    }
+
+    private extractTextFromResponse(response: Response): string {
+        if (response.output_text && response.output_text.trim().length > 0) {
+            return response.output_text;
+        }
+
+        const texts: string[] = [];
+        for (const item of response.output ?? []) {
+            if (item.type === 'message') {
+                for (const content of item.content) {
+                    if (content.type === 'output_text') {
+                        texts.push(content.text);
+                    }
+                }
+            }
+        }
+
+        return texts.join('\n').trim();
     }
 }
 
