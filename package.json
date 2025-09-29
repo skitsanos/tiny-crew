@@ -5,7 +5,7 @@
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/jsdom": "^21.1.7"
+    "@types/jsdom": "^27.0.0"
   },
   "peerDependencies": {
     "typescript": "^5.6.2"
