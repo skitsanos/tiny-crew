@@ -6,17 +6,16 @@ import {
     AgentEvent,
     type ConversationMessage,
     type LlmConfig,
-    type SharedMemory,
     type Task,
     type TaskError,
-    type TaskResult, TaskStatus,
+    type TaskResult,
+    TaskStatus,
     type Tool
 } from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import dedent from 'dedent';
 import type {
     Response,
-    ResponseFunctionToolCall,
     ResponseInputItem,
     ResponseOutputMessage
 } from 'openai/resources/responses/responses';
@@ -303,17 +302,6 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         }));
     }
 
-    private buildChatToolDefinitions(): Array<{ type: 'function'; function: any }> {
-        return Array.from(this.tools.values()).map(tool => ({
-            type: 'function' as const,
-            function: {
-                name: tool.schema.name,
-                description: tool.schema.description,
-                parameters: tool.schema.parameters
-            }
-        }));
-    }
-
     private buildToolInstruction(): string {
         const instructions: string[] = [];
 
@@ -377,42 +365,31 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         );
     }
 
-    private async runResponseWorkflow(conversation: ResponseInputItem[], taskDescription: string = ''): Promise<{ text: string; response: Response; toolsUsed: string[] }> {
+    private async runResponseWorkflow(conversation: ResponseInputItem[], _taskDescription: string = ''): Promise<{ text: string; response: Response; toolsUsed: string[] }> {
         const toolsUsed: string[] = [];
 
         this.logger.info(`Starting response workflow with ${this.tools.size} tools available`);
 
         // Step 1: Get initial response with potential tool calls
-        const response = await this.createResponse(conversation, this.tools.size > 0);
+        let response = await this.createResponse(conversation, this.tools.size > 0);
 
         this.logger.info(`Got initial response, checking for tool calls...`);
 
-        // Step 2: Extract tool calls from the response
+        // Step 2: Extract tool calls from the response (handle both function_call items and message-embedded tool calls)
         this.logger.debug(`Full response output:`, JSON.stringify(response.output, null, 2));
 
-        const toolCalls: any[] = [];
-        for (const item of response.output ?? []) {
-            this.logger.debug(`Response output item:`, { type: item.type, id: (item as any).id, name: (item as any).name });
-            if (item.type === "function_call") {
-                this.logger.debug(`Found function call:`, item);
-                // Convert Responses API format to Chat Completions format for compatibility
-                toolCalls.push({
-                    id: (item as any).call_id,
-                    function: {
-                        name: (item as any).name,
-                        arguments: (item as any).arguments
-                    }
-                });
-            }
-        }
+        const toolCalls = this.extractToolCalls(response);
 
         this.logger.info(`Extracted ${toolCalls.length} tool calls from response`);
 
         // Step 3: If no tools called, return the response immediately
         if (toolCalls.length === 0) {
-            this.logger.warn(`No tool calls found! Available tools: ${Array.from(this.tools.keys()).join(', ')}`);
+            const text = this.extractTextFromResponse(response);
+            if (this.tools.size > 0 && !text) {
+                this.logger.warn(`No tool calls found and no text response. Available tools: ${Array.from(this.tools.keys()).join(', ')}`);
+            }
             return {
-                text: this.extractTextFromResponse(response),
+                text,
                 response,
                 toolsUsed
             };
@@ -420,43 +397,131 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         this.logger.info(`Found ${toolCalls.length} tool calls to execute`);
 
-        // Step 4: Execute all tool calls and prepare outputs
-        const tool_outputs = await Promise.all(
-            toolCalls.map(async (tc) => {
-                const args = this.safeParseJson(tc.function.arguments);
-                toolsUsed.push(tc.function.name);
+        // Step 4: Execute all tool calls and prepare outputs for the model
+        const toolOutputs: ResponseInputItem[] = [];
 
-                this.logger.info(`Executing tool: ${tc.function.name}`, {
-                    agent: this.name,
-                    toolCallId: tc.id,
-                    arguments: args
+        for (const tc of toolCalls) {
+            const parseResult = this.parseToolArguments(tc.arguments);
+            toolsUsed.push(tc.name);
+
+            this.logger.info(`Executing tool: ${tc.name}`, {
+                agent: this.name,
+                toolCallId: tc.call_id,
+                arguments: parseResult.success ? parseResult.args : '<parse failed>'
+            });
+
+            let output: string;
+
+            if (!parseResult.success) {
+                // Surface argument parsing failure to the model so it can retry
+                output = JSON.stringify({
+                    error: 'Invalid JSON arguments',
+                    details: parseResult.error,
+                    rawArguments: tc.arguments
                 });
-
+                this.logger.error(`Failed to parse arguments for tool ${tc.name}:`, { error: parseResult.error });
+            } else {
                 try {
-                    const result = await this.executeTool(tc.function.name, args);
-                    return {
-                        tool_call_id: tc.id,
-                        output: typeof result === 'string' ? result : JSON.stringify(result)
-                    };
+                    const result = await this.executeTool(tc.name, parseResult.args);
+                    output = typeof result === 'string' ? result : JSON.stringify(result);
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : String(error);
-                    this.logger.error(`Tool execution failed: ${tc.function.name}`, { error: errorMessage });
-                    return {
-                        tool_call_id: tc.id,
-                        output: JSON.stringify({ error: errorMessage })
-                    };
+                    this.logger.error(`Tool execution failed: ${tc.name}`, { error: errorMessage });
+                    output = JSON.stringify({ error: errorMessage });
                 }
-            })
+            }
+
+            toolOutputs.push({
+                type: 'function_call_output',
+                call_id: tc.call_id,
+                output
+            } as ResponseInputItem);
+        }
+
+        // Step 5: Send tool outputs back to the model for synthesis
+        this.logger.info(`Sending ${toolOutputs.length} tool outputs back to model for synthesis`);
+
+        // Use previous_response_id to maintain structured context.
+        // This preserves the full function_call items (name, args, call_id) from the
+        // initial response, allowing the model to deterministically align outputs to tools.
+        // The input only needs the function_call_output items - the API handles context.
+        const finalResponse = await withRetry(
+            () => this.client.responses.create({
+                model: this.llmConfig.model,
+                previous_response_id: response.id,  // Preserves structured tool-call context
+                input: toolOutputs,                  // Only the function_call_output items
+                temperature: this.llmConfig.temperature,
+                ...(this.llmConfig.maxTokens ? { max_output_tokens: this.llmConfig.maxTokens } : {})
+            }),
+            this.logger,
+            `responses.create follow-up (${this.name})`
         );
 
-        // Step 5: Tool execution completed, return response
-        this.logger.info(`Tool execution completed. Tools used: ${toolsUsed.join(', ')}`);
+        this.logger.info(`Tool execution and synthesis completed. Tools used: ${toolsUsed.join(', ')}`);
 
         return {
-            text: `Successfully executed ${toolsUsed.length} tool(s): ${toolsUsed.join(', ')}`,
-            response,
+            text: this.extractTextFromResponse(finalResponse),
+            response: finalResponse,
             toolsUsed
         };
+    }
+
+    /**
+     * Extract tool calls from response output.
+     * Handles the primary Responses API format (function_call items).
+     */
+    private extractToolCalls(response: Response): Array<{ call_id: string; name: string; arguments: string }> {
+        const toolCalls: Array<{ call_id: string; name: string; arguments: string }> = [];
+
+        for (const item of response.output ?? []) {
+            // Handle function_call items (Responses API format)
+            if (item.type === 'function_call') {
+                const fc = item as any;
+                toolCalls.push({
+                    call_id: fc.call_id,
+                    name: fc.name,
+                    arguments: fc.arguments
+                });
+            }
+            // Note: The Responses API primarily uses function_call items at the output level.
+            // Message-embedded tool_use is an Anthropic/Claude format, not OpenAI Responses API.
+            // Keeping minimal handling for potential future compatibility.
+            else if (item.type === 'message' && 'content' in item) {
+                for (const content of (item as any).content ?? []) {
+                    if (content.type === 'tool_use' || content.type === 'function_call') {
+                        toolCalls.push({
+                            call_id: content.id || content.call_id,
+                            name: content.name,
+                            arguments: typeof content.input === 'string'
+                                ? content.input
+                                : JSON.stringify(content.input || content.arguments || {})
+                        });
+                    }
+                }
+            }
+        }
+
+        return toolCalls;
+    }
+
+    /**
+     * Parse tool arguments with explicit success/failure handling
+     */
+    private parseToolArguments(value: string | null | undefined): { success: true; args: Record<string, any> } | { success: false; error: string; args: Record<string, any> } {
+        if (!value || value.trim() === '') {
+            return { success: true, args: {} };
+        }
+
+        try {
+            const parsed = JSON.parse(value);
+            return { success: true, args: parsed };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+                args: {} // Fallback for backwards compatibility, but caller should check success
+            };
+        }
     }
 
     private extractTextFromResponse(response: Response): string {
@@ -478,26 +543,15 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         return texts.join('\n').trim();
     }
 
-    private safeParseJson<T = Record<string, any>>(value: string | null | undefined): T {
-        if (!value) {
-            return {} as T;
-        }
-
-        try {
-            return JSON.parse(value) as T;
-        } catch (error) {
-            this.logger.warn('Failed to parse JSON payload', { value, error: error instanceof Error ? error.message : String(error) });
-            return {} as T;
-        }
-    }
-
-
     /**
-     * Perform a task with the current shared memory and chat history
+     * Perform a task with optional memory context and chat history
+     * @param taskDescription - The task to perform
+     * @param memoryContext - Pre-built context string from MemoryStore.buildContext()
+     * @param chatHistory - Previous conversation messages
      */
     async performTask(
         taskDescription: string,
-        sharedMemory: SharedMemory = {},
+        memoryContext: string = '',
         chatHistory: ConversationMessage[] = []
     ): Promise<string> {
         const task = this.createTask(taskDescription);
@@ -518,16 +572,8 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             conversation.push(this.buildMessage('system', this.buildToolInstruction()));
         }
 
-        if (Object.keys(sharedMemory).length > 0) {
-            conversation.push(this.buildMessage(
-                'system',
-                `Shared knowledge: ${JSON.stringify(Object.values(sharedMemory).map(item => ({
-                    task: item.key,
-                    agent: item.agent,
-                    result: item.value
-                })))}
-                `
-            ));
+        if (memoryContext.length > 0) {
+            conversation.push(this.buildMessage('system', memoryContext));
         }
 
         for (const message of chatHistory) {

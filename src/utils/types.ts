@@ -103,19 +103,6 @@ export interface CrewConfig {
     metadata?: Record<string, any>;
 }
 
-// Memory-related interfaces
-export interface MemoryItem {
-    key: string;
-    value: any;
-    agent: string;
-    timestamp: number;
-    metadata?: Record<string, any>;
-}
-
-export interface SharedMemory {
-    [key: string]: MemoryItem;
-}
-
 // LLM-related interfaces
 export interface LlmConfig {
     model: string;

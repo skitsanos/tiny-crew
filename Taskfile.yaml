@@ -11,3 +11,16 @@ tasks:
       - |
         bun run src/index.ts
     desc: Run the application
+
+  check-llm:
+    cmds:
+      - |
+        response=$(curl -s -w "\n%{http_code}" https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY")
+        http_code=$(echo "$response" | tail -n1)
+        if [ "$http_code" = "200" ]; then
+          echo "OpenAI API token is valid"
+        else
+          echo "OpenAI API token is invalid (HTTP $http_code)"
+          exit 1
+        fi
+    desc: Check if OpenAI API token is valid
