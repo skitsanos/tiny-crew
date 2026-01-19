@@ -6,7 +6,7 @@ TinyCrew is a TypeScript framework that orchestrates multiple AI agents to solve
 
 - **Agent System**: Specialized AI assistants with distinct goals and tools
 - **Crew Management**: Central coordinator that assigns tasks to appropriate agents
-- **Shared Memory**: Knowledge transfer between agents
+- **Memory System**: Persistent knowledge storage with pluggable backends (in-memory or JSON file)
 - **Tool Integration**: Extensible system for agents to interact with external services
 - **Event System**: Monitoring of task progress and memory updates
 - **Error Handling**: Robust recovery and reporting
@@ -21,14 +21,13 @@ TinyCrew represents a solid foundation for many agentic tasks, but with some imp
 **Strengths:**
 
 - The multi-agent architecture with specialized roles works well for collaborative tasks
-- The shared memory system enables effective knowledge-building between agents
+- The memory system enables effective knowledge-building between agents with optional persistence
 - The event system provides good visibility into the process
 - Tool integration allows for real-world interactions
 - The reflection capability enables some self-improvement
 
 **Limitations:**
 
-- It lacks long-term memory persistence between sessions
 - There's no built-in web browsing or search capability (though you could add this)
 - The task planning is relatively simple compared to more sophisticated planning frameworks
 - It doesn't have built-in knowledge graph or vector storage for more complex information relationships
@@ -38,8 +37,7 @@ For many practical use cases like content creation, basic research, and collabor
 
 1. The workflow is relatively well-defined
 2. Tasks can be cleanly divided between specialized agents
-3. The scope is contained within a single session
-4. Tool usage is straightforward
+3. Tool usage is straightforward
 
 For more complex scenarios involving dynamic planning, autonomous exploration, or long-running processes, you might need to extend TinyCrew with additional capabilities or integrate it with other systems.
 
@@ -48,7 +46,7 @@ For more complex scenarios involving dynamic planning, autonomous exploration, o
 - **Enhanced Agent Architecture**: Specialized AI agents with unique capabilities, configurable system prompts, and robust tool integration.
 - **Task Management System**: Complete task lifecycle management with status tracking, dependencies, and parallel execution.
 - **Event-Driven Communication**: Comprehensive event system for monitoring agent activities and crew progress.
-- **Configurable Memory System**: Structured shared memory with timestamps and metadata for improved knowledge sharing.
+- **Pluggable Memory System**: MemoryStore with swappable backends (InMemoryBackend, JSONFileBackend), auto-eviction, keyword-aware relevance scoring, and event notifications.
 - **Secure Tool Integration**: Tool system with input validation, security controls, and flexible configuration.
 - **Extensible Logging**: Enhanced logging with levels, formatting options, and support for both Node.js and Bun environments.
 - **LLM-Driven Agent Selection**: Intelligent task assignment using language models to match tasks with the most suitable agent.
@@ -260,102 +258,136 @@ const finalStory = await crew.provideFinalResponse(
 
 ## Advanced Features
 
-### Crew Memory
+### Memory System
 
-Let's explore the memory system in TinyCrew - it's one of the core components that enables effective collaboration between agents.
+TinyCrew features a pluggable memory system that enables knowledge sharing between agents with optional persistence across sessions.
 
-#### How Memory Works in TinyCrew
+#### Memory Architecture
 
-At its core, the shared memory system in TinyCrew is what allows multiple agents to build on each other's work. Here's how it functions:
+The memory system consists of three main components:
 
-1. **Structure**: Memory is implemented as a key-value store where each entry contains:
+1. **MemoryStore**: High-level API for storing and retrieving task results with automatic eviction, event notifications, and context building for LLM prompts.
 
-   - A unique key (typically based on the task)
-   - The value (task result or other information)
-   - Metadata (agent name, timestamp, additional context)
-   - Agent attribution (which agent provided this information)
+2. **Backends**: Pluggable storage implementations:
+   - `InMemoryBackend` (default): Fast, ephemeral storage
+   - `JSONFileBackend`: File-based persistence with atomic writes
 
-2. **Update Mechanism**: When an agent completes a task, its results are automatically stored in shared memory:
+3. **MemoryItem**: Each stored item contains:
+   - Task description and result
+   - Agent attribution and timestamps
+   - Token count estimation
+   - Access tracking for relevance scoring
+   - Optional tags and metadata
 
-   ```typescript
-   private updateSharedMemory(agent: string, task: string, result: string): void {
-     const itemKey = `task_${task.slice(0, 20).replace(/\W+/g, '_')}`;
+#### Basic Usage
 
-     this.sharedMemory[itemKey] = {
-       key: itemKey,
-       value: { task, result },
-       agent,
-       timestamp: Date.now(),
-       metadata: {}
-     };
+```typescript
+import { Crew, MemoryStore, JSONFileBackend } from 'tiny-crew';
 
-     this.emit(CrewEvent.MEMORY_UPDATED, { ... });
-   }
-   ```
+// Create a persistent memory store
+const memoryStore = new MemoryStore(
+  new JSONFileBackend({ basePath: './data/memory' }),
+  {
+    maxItems: 500,
+    maxTotalTokens: 50000,
+    autoEvict: true
+  }
+);
 
-3. **Access Pattern**: When a new task is assigned, the agent receives the current state of shared memory:
+// Create crew with memory
+const crew = new Crew(
+  { goal: 'Research and analyze topics', model: 'gpt-4o' },
+  openai,
+  { memoryStore }
+);
 
-   ```typescript
-   // Using the Responses API format
-   const conversation: ResponseInputItem[] = [];
-   conversation.push(this.buildMessage('system', this.systemPrompt));
+// Add agents and execute tasks...
+// Task results are automatically stored in memory
 
-   if (Object.keys(sharedMemory).length > 0) {
-     conversation.push(this.buildMessage(
-       'system',
-       `Shared knowledge: ${JSON.stringify(Object.values(sharedMemory)
-                           .map(item => ({ task: item.key, agent: item.agent, result: item.value })))}`
-     ));
-   }
-   ```
+// Close memory store when done (flushes pending writes)
+await memoryStore.close();
+```
 
-4. **Event Notification**: Memory updates trigger events that the crew and other components can listen for:
+#### Memory Configuration
 
-   ```typescript
-   this.emit(CrewEvent.MEMORY_UPDATED, {
-     crew: this.id,
-     memory: this.sharedMemory,
-     update: { key, agent, task, timestamp }
-   });
-   ```
+```typescript
+const memoryStore = new MemoryStore(backend, {
+  defaultTtl: 0,           // Time-to-live in ms (0 = never expires)
+  maxItems: 1000,          // Maximum items before eviction
+  maxTotalTokens: 100000,  // Token budget for all items
+  summarizeThreshold: 2000, // Token count to trigger summarization
+  autoEvict: true,         // Enable automatic eviction
+  evictInterval: 60000     // Eviction check interval (ms)
+});
+```
 
-#### Benefits of the Memory System
+#### Keyword-Aware Relevance
 
-1. **Knowledge Building**: Each agent can build upon information discovered by other agents rather than starting from scratch.
-2. **Task Context**: Agents understand what has already been accomplished and can refer to specific information from previous tasks.
-3. **Coherent Outputs**: The final output integrates contributions from all agents into a cohesive whole.
-4. **Temporal Context**: Timestamps allow agents to understand the sequence of discoveries and changes.
-5. **Attribution**: The system tracks which agent generated which information, enabling proper credit and context.
+When building context for agents, the memory system scores items by keyword relevance to the current task:
+
+```typescript
+// Memory items matching current task keywords are prioritized
+const context = await memoryStore.buildContext(crewId, {
+  maxTokens: 4000,
+  maxItems: 10,
+  relevanceKeywords: ['research', 'analysis', 'findings']
+});
+```
+
+Scoring weights:
+- Tags: +3 points (exact match)
+- Task description: +2 points
+- Tools/capabilities used: +2 points
+- Result content: +1 point
+- Agent name: +1 point
+
+#### Memory Events
+
+```typescript
+import { MemoryEvent } from 'tiny-crew';
+
+memoryStore.on(MemoryEvent.ITEM_SET, ({ crewId, key, item }) => {
+  console.log(`Memory stored: ${key} by ${item.agent}`);
+});
+
+memoryStore.on(MemoryEvent.ITEMS_EVICTED, ({ crewId, count }) => {
+  console.log(`Evicted ${count} items from ${crewId}`);
+});
+```
+
+#### Direct Memory Operations
+
+```typescript
+// Store a memory item directly
+await memoryStore.set(crewId, 'research_results', {
+  taskId: 'task_1',
+  agent: 'ResearchAgent',
+  task: 'Research AI trends',
+  result: 'Key findings...',
+  toolsUsed: ['web_search'],
+  metadata: { sources: ['arxiv', 'papers'] }
+});
+
+// Query memory
+const items = await memoryStore.query(crewId, {
+  agent: 'ResearchAgent',
+  tags: ['important'],
+  sortBy: 'relevance'
+});
+
+// Get statistics
+const stats = await memoryStore.getStats(crewId);
+console.log(`Items: ${stats.itemCount}, Tokens: ${stats.totalTokens}`);
+```
 
 #### Practical Applications
 
-1. **Research Tasks**: One agent finds basic information, another analyzes it, and a third synthesizes the findings.
-2. **Creative Writing**: As we've seen in the Creative Writing example, different agents can handle plot, characters, and dialogue, with each building on the others' work.
-3. **Code Development**: One agent can design an architecture, another can implement specific functions, and a third can write tests - all sharing their progress.
-4. **Problem Solving**: Complex problems can be broken down, with different agents tackling different aspects and sharing insights.
+1. **Multi-session workflows**: Use JSONFileBackend to persist research across sessions
+2. **Knowledge accumulation**: Agents build on each other's discoveries
+3. **Context optimization**: Relevance scoring ensures most pertinent information reaches agents
+4. **Resource management**: Auto-eviction prevents unbounded memory growth
 
-#### Memory Handling Example
-
-```typescript
-// In a custom task workflow
-async function analyzeDocument(crew, documentText) {
-  // First agent extracts key points
-  await crew.assignTask(`Extract the main points from: ${documentText.substring(0, 1000)}...`);
-  
-  // Second agent analyzes the points (with access to first agent's findings)
-  await crew.assignTask("Analyze the main points and identify patterns or insights");
-  
-  // Third agent makes recommendations based on all previous work
-  await crew.assignTask("Based on the analysis, provide 3 actionable recommendations");
-  
-  // The final response incorporates all the shared knowledge
-  return await crew.provideFinalResponse("Synthesize the analysis into a concise report");
-}
-```
-
-The shared memory system is what makes TinyCrew truly collaborative rather than just a sequence of independent agents. It enables emergent intelligence where the collective output is greater than what any individual agent could produce alone.
-
-Would you like me to elaborate on any specific aspect of the memory system, such as advanced memory management or ways to extend it for specific use cases?
+See `examples/PersistentMemory.ts` for a complete example.
 
 ### Parallel Task Execution
 
