@@ -2,7 +2,7 @@ import {EventEmitter} from 'events';
 import {randomUUID} from 'crypto';
 import type OpenAI from 'openai';
 import type Agent from '@/Agent';
-import {AgentEvent, type ConversationMessage, type CrewConfig, CrewEvent, TaskStatus, type LlmConfig} from '@/utils/types.ts';
+import {AgentEvent, type ConversationMessage, type CrewConfig, CrewEvent, TaskStatus} from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import dedent from 'dedent';
 import type {
@@ -12,6 +12,7 @@ import type {
 } from 'openai/resources/responses/responses';
 import {withRetry} from '@/utils/retry.ts';
 import { MemoryStore, type MemoryBackend, type MemoryStoreConfig } from '@/Memory';
+import { ModelRouter } from '@/ModelRouter';
 
 /**
  * Tracks agent performance for heuristic-based task assignment
@@ -23,13 +24,15 @@ interface AgentPerformanceRecord {
 }
 
 /**
- * Options for creating a Crew with a custom memory backend
+ * Options for creating a Crew with custom backends and routing
  */
 export interface CrewOptions {
     /** Custom memory backend (default: InMemoryBackend) */
     memoryBackend?: MemoryBackend;
     /** Memory store configuration */
     memoryConfig?: MemoryStoreConfig;
+    /** Model router for purpose-based model selection (default: ModelRouter.fromEnv()) */
+    modelRouter?: ModelRouter;
 }
 
 /**
@@ -41,13 +44,13 @@ export class Crew extends EventEmitter {
     private readonly agents: Map<string, Agent>;
     private readonly memoryStore: MemoryStore;
     private readonly logger: Logger;
-    private readonly llmConfig: LlmConfig;
     private readonly client: OpenAI;
     private readonly chatHistory: ConversationMessage[];
     private readonly taskAssignmentPrompt: string;
     private readonly summarizationPrompt: string;
     private pendingTasks: string[];
     private readonly agentPerformance: Map<string, AgentPerformanceRecord>;
+    private readonly modelRouter: ModelRouter;
 
     /**
      * Create a new Crew instance
@@ -67,12 +70,6 @@ export class Crew extends EventEmitter {
         this.pendingTasks = [];
         this.agentPerformance = new Map();
 
-        this.llmConfig = {
-            model: config.model || 'gpt-4o-mini',
-            temperature: config.temperature || 0.5,
-            maxTokens: config.maxTokens || 1024
-        };
-
         this.taskAssignmentPrompt = config.taskAssignmentPrompt || this.buildDefaultTaskAssignmentPrompt();
         this.summarizationPrompt = config.summarizationPrompt || this.buildDefaultSummarizationPrompt();
 
@@ -84,6 +81,9 @@ export class Crew extends EventEmitter {
             options?.memoryConfig,
             this.logger
         );
+
+        // Initialize model router (defaults to env-based configuration)
+        this.modelRouter = options?.modelRouter ?? ModelRouter.fromEnv();
     }
 
     /**
@@ -147,6 +147,9 @@ export class Crew extends EventEmitter {
     addAgent(agent: Agent): void {
         const agentName = agent.getName();
         this.agents.set(agentName, agent);
+
+        // Share the model router with the agent
+        agent.setModelRouter(this.modelRouter);
 
         // Initialize performance tracking for this agent
         if (!this.agentPerformance.has(agentName)) {
@@ -273,6 +276,13 @@ export class Crew extends EventEmitter {
      */
     getMemoryStore(): MemoryStore {
         return this.memoryStore;
+    }
+
+    /**
+     * Get the ModelRouter instance for model selection
+     */
+    getModelRouter(): ModelRouter {
+        return this.modelRouter;
     }
 
     /**
@@ -476,7 +486,7 @@ export class Crew extends EventEmitter {
         try {
             const response = await withRetry(
                 () => this.client.responses.create({
-                    model: this.llmConfig.model,
+                    model: this.modelRouter.getModel('agent_selection'),
                     input: [
                         {
                             role: 'user',
@@ -642,7 +652,7 @@ export class Crew extends EventEmitter {
 
             const response = await withRetry(
                 () => this.client.responses.create({
-                    model: this.llmConfig.model,
+                    model: this.modelRouter.getModel('final_response'),
                     input,
                     temperature: 0.3
                 }),
@@ -694,7 +704,7 @@ export class Crew extends EventEmitter {
         try {
             const response = await withRetry(
                 () => this.client.responses.create({
-                    model: this.llmConfig.model,
+                    model: this.modelRouter.getModel('goal_achievement'),
                     input: [
                         this.buildMessage('user', summaryPrompt)
                     ],

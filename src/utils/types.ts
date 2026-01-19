@@ -51,6 +51,8 @@ export interface AgentConfig {
     maxTokens?: number;
     capabilities?: string[]; // What this agent is good at
     metadata?: Record<string, any>;
+    /** Preferred model for task execution (overrides ModelRouter for this agent) */
+    preferredModel?: string;
 }
 
 // Tool-related interfaces
@@ -112,6 +114,35 @@ export interface LlmConfig {
     frequencyPenalty?: number;
     presencePenalty?: number;
     metadata?: Record<string, any>;
+}
+
+/**
+ * Model purpose types for routing LLM calls to appropriate models
+ * Different purposes can use different models for cost optimization
+ */
+export type ModelPurpose =
+    | 'agent_selection'   // Selecting which agent handles a task
+    | 'task_execution'    // Agent performing its assigned task
+    | 'tool_synthesis'    // Synthesizing results after tool use
+    | 'final_response'    // Generating final crew response
+    | 'goal_achievement'  // Summarizing for crew goal
+    | 'reflection'        // Agent self-reflection
+    | 'summarization'     // Summarization tasks
+    | 'translation'       // Translation tasks
+    | 'planning';         // Task planning
+
+/**
+ * Configuration for ModelRouter
+ */
+export interface ModelRouterConfig {
+    /** Default model used when no purpose-specific model is configured */
+    defaultModel: string;
+    /** Purpose-specific model overrides */
+    models?: Partial<Record<ModelPurpose, string>>;
+    /** Allowlist of valid model names (if set, warns when model not in list) */
+    allowedModels?: string[];
+    /** Warn when model doesn't match known patterns (default: true) */
+    warnOnUnknown?: boolean;
 }
 
 // Events

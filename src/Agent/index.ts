@@ -6,6 +6,7 @@ import {
     AgentEvent,
     type ConversationMessage,
     type LlmConfig,
+    type ModelPurpose,
     type Task,
     type TaskError,
     type TaskResult,
@@ -20,6 +21,7 @@ import type {
     ResponseOutputMessage
 } from 'openai/resources/responses/responses';
 import { withRetry } from '@/utils/retry.ts';
+import { ModelRouter } from '@/ModelRouter';
 
 /**
  * Enhanced Agent class with improved state management and tool handling
@@ -36,6 +38,8 @@ export class Agent extends EventEmitter {
     private readonly logger: Logger;
     private readonly client: OpenAI;
     private taskHistory: Map<string, Task>;
+    private modelRouter?: ModelRouter;
+    private readonly preferredModel?: string;
 
     /**
      * Create a new Agent instance
@@ -48,6 +52,7 @@ export class Agent extends EventEmitter {
         this.expectedOutput = config.expectedOutput;
         this.systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
         this.capabilities = config.capabilities || [];
+        this.preferredModel = config.preferredModel;
         this.llmConfig = {
             model: config.model || 'gpt-4o-mini',
             temperature: config.temperature || 0.7,
@@ -61,6 +66,33 @@ export class Agent extends EventEmitter {
         // Register default event handlers
         this.on(AgentEvent.TASK_COMPLETED, this.handleTaskComplete.bind(this));
         this.on(AgentEvent.TASK_FAILED, this.handleTaskError.bind(this));
+    }
+
+    /**
+     * Set the model router for purpose-based model selection
+     * Typically called by Crew when adding the agent
+     */
+    setModelRouter(router: ModelRouter): void {
+        this.modelRouter = router;
+    }
+
+    /**
+     * Get the model for a specific purpose
+     * Priority: preferredModel (for task_execution) > router > llmConfig.model
+     */
+    private getModelForPurpose(purpose: ModelPurpose): string {
+        // For task execution and tool synthesis, prefer the agent's preferred model if set
+        if (this.preferredModel && (purpose === 'task_execution' || purpose === 'tool_synthesis')) {
+            return this.preferredModel;
+        }
+
+        // Use router if available
+        if (this.modelRouter) {
+            return this.modelRouter.getModel(purpose);
+        }
+
+        // Fall back to llmConfig
+        return this.llmConfig.model;
     }
 
     /**
@@ -338,7 +370,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         allowTools: boolean
     ): Promise<Response> {
         const request: Record<string, any> = {
-            model: this.llmConfig.model,
+            model: this.getModelForPurpose('task_execution'),
             input: conversation,
             temperature: this.llmConfig.temperature
         };
@@ -447,7 +479,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         // The input only needs the function_call_output items - the API handles context.
         const finalResponse = await withRetry(
             () => this.client.responses.create({
-                model: this.llmConfig.model,
+                model: this.getModelForPurpose('tool_synthesis'),
                 previous_response_id: response.id,  // Preserves structured tool-call context
                 input: toolOutputs,                  // Only the function_call_output items
                 temperature: this.llmConfig.temperature,
@@ -650,7 +682,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         try {
             const reflection = await withRetry(
                 () => this.client.responses.create({
-                    model: this.llmConfig.model,
+                    model: this.getModelForPurpose('reflection'),
                     input: [
                         this.buildMessage('system', this.systemPrompt),
                         this.buildMessage('user', reflectionPrompt)

@@ -1,8 +1,9 @@
 import type OpenAI from 'openai';
-import type { Tool, ToolSchema } from '@/utils/types.ts';
+import type { Tool, ToolSchema, ModelPurpose } from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
 import type { Response } from 'openai/resources/responses/responses';
 import { withRetry } from '@/utils/retry.ts';
+import type { ModelRouter } from '@/ModelRouter';
 
 interface TextPromptConfig {
     name: string;
@@ -12,6 +13,10 @@ interface TextPromptConfig {
     model?: string;
     temperature?: number;
     maxTokens?: number;
+    /** Purpose for model routing (default: 'summarization') */
+    purpose?: ModelPurpose;
+    /** Optional model router for purpose-based model selection */
+    modelRouter?: ModelRouter;
 }
 
 interface TextPromptArgs {
@@ -34,6 +39,8 @@ export class TextPromptTool implements Tool {
     private readonly maxTokens: number;
     private readonly logger: Logger;
     private readonly client: OpenAI;
+    private readonly purpose: ModelPurpose;
+    private readonly modelRouter?: ModelRouter;
 
     constructor(config: TextPromptConfig, client: OpenAI, logger?: Logger) {
         this.name = config.name;
@@ -43,6 +50,8 @@ export class TextPromptTool implements Tool {
         this.model = config.model || 'gpt-4o';
         this.temperature = config.temperature || 0.3;
         this.maxTokens = config.maxTokens || 1024;
+        this.purpose = config.purpose || 'summarization';
+        this.modelRouter = config.modelRouter;
         this.client = client;
         this.logger = logger || new Logger(`TextPromptTool-${this.name}`);
 
@@ -86,6 +95,16 @@ export class TextPromptTool implements Tool {
      */
     public getCapabilities(): string[] {
         return ['text_processing', 'llm_prompt_execution', this.name.toLowerCase()];
+    }
+
+    /**
+     * Get the model to use for this tool
+     */
+    private getModel(): string {
+        if (this.modelRouter) {
+            return this.modelRouter.getModel(this.purpose);
+        }
+        return this.model;
     }
 
     /**
@@ -141,7 +160,7 @@ export class TextPromptTool implements Tool {
             // Make the LLM request
             const response = await withRetry(
                 () => this.client.responses.create({
-                    model: this.model,
+                    model: this.getModel(),
                     input: [
                         { role: 'system', content: this.systemPrompt },
                         { role: 'user', content: populatedPrompt }

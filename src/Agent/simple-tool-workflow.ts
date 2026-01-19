@@ -3,17 +3,29 @@
  */
 import type OpenAI from 'openai';
 import type { ResponseInputItem } from 'openai/resources/responses/responses';
-import type { Tool, LlmConfig } from '@/utils/types';
+import type { Tool, LlmConfig, ModelPurpose } from '@/utils/types';
 import type Logger from '@/utils/logger';
 import { withRetry } from '@/utils/retry';
+import type { ModelRouter } from '@/ModelRouter';
 
 export class SimpleToolWorkflow {
     constructor(
         private tools: Map<string, Tool>,
         private client: OpenAI,
         private logger: Logger,
-        private llmConfig: LlmConfig
+        private llmConfig: LlmConfig,
+        private modelRouter?: ModelRouter
     ) {}
+
+    /**
+     * Get the model for a specific purpose
+     */
+    private getModelForPurpose(purpose: ModelPurpose): string {
+        if (this.modelRouter) {
+            return this.modelRouter.getModel(purpose);
+        }
+        return this.llmConfig.model;
+    }
 
     /**
      * Simple tool execution: One response -> Execute tools -> One final response
@@ -24,7 +36,7 @@ export class SimpleToolWorkflow {
         // Step 1: Get initial response with tool calls
         const initialResponse = await withRetry(
             () => this.client.responses.create({
-                model: this.llmConfig.model,
+                model: this.getModelForPurpose('task_execution'),
                 input: conversation,
                 temperature: this.llmConfig.temperature,
                 ...(this.llmConfig.maxTokens ? { max_output_tokens: this.llmConfig.maxTokens } : {}),
@@ -86,7 +98,7 @@ export class SimpleToolWorkflow {
         // The input only needs the function_call_output items - the API handles context.
         const finalResponse = await withRetry(
             () => this.client.responses.create({
-                model: this.llmConfig.model,
+                model: this.getModelForPurpose('tool_synthesis'),
                 previous_response_id: initialResponse.id,  // Preserves structured tool-call context
                 input: toolOutputs,                         // Only the function_call_output items
                 temperature: this.llmConfig.temperature,

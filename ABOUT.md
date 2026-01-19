@@ -14,6 +14,8 @@ The framework targets modern platforms only: Bun 1.2.x and Node.js 22 (or newer)
 
 **Version 2.3.0+ introduces the OpenAI Responses API integration**, replacing the previous Chat Completions API for more reliable tool calling and enhanced error handling with automatic retry mechanisms.
 
+**Version 2.5.0 introduces Multi-Model Routing**, allowing different LLM operations to use different models based on their purpose—enabling cost optimization by using cheaper models for routine tasks and more capable models for complex reasoning.
+
 ## Key Features that Set Tiny Crew Apart
 
 1. **LLM-Driven Agent Selection**: Unlike traditional systems where tasks are assigned based on predefined rules or simple matching algorithms, Tiny Crew uses an LLM to analyze the task requirements and agent capabilities in real-time, making sophisticated decisions about task allocation.
@@ -27,6 +29,8 @@ The framework targets modern platforms only: Bun 1.2.x and Node.js 22 (or newer)
 5. **Intelligent Summarization**: At the end of a mission, Tiny Crew uses its LLM to generate comprehensive summaries that tie together the work of all agents, providing insights and conclusions aligned with the overall goal.
 
 6. **Robust Error Handling**: Automatic retry mechanisms and comprehensive logging ensure reliable operation even when facing API rate limits or network issues.
+
+7. **Multi-Model Routing**: Route different operations to different models based on purpose. Use cost-effective models like `gpt-4o-mini` for routine tasks (agent selection, reflection) while reserving more capable models for complex reasoning tasks. Supports environment-based configuration, programmatic setup, and per-agent model overrides.
 
 ## Code Examples
 
@@ -152,7 +156,46 @@ const financialAgent = new Agent({
 crew.addAgent(financialAgent);
 ```
 
-These code examples demonstrate the flexibility and power of Tiny Crew, showcasing how easily you can set up a crew, add agents with specific goals and tools, and run complex missions.
+4. Configuring Multi-Model Routing:
+
+```typescript
+import { Crew, Agent, ModelRouter } from './src/index';
+import OpenAI from 'openai';
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Option 1: Environment-based (reads DEFAULT_MODEL, MODEL_AGENT_SELECTION, etc.)
+const crew = new Crew({ goal: 'Research market trends' }, openai);
+
+// Option 2: Programmatic configuration
+const router = new ModelRouter({
+    defaultModel: 'gpt-4o',
+    models: {
+        agent_selection: 'gpt-4o-mini',  // Cheaper model for routine task
+        reflection: 'gpt-4o-mini',        // Cheaper model for self-reflection
+        task_execution: 'gpt-4o'          // Capable model for complex work
+    }
+});
+
+const crewWithRouter = new Crew(
+    { goal: 'Analyze competitive landscape' },
+    openai,
+    [],
+    { modelRouter: router }
+);
+
+// Option 3: Per-agent model override
+const cheapSummarizer = new Agent({
+    name: 'Summarizer',
+    goal: 'Quickly summarize content',
+    preferredModel: 'gpt-4o-mini',  // Always uses mini for this agent
+    capabilities: ['summarization']
+}, openai);
+
+crewWithRouter.addAgent(cheapSummarizer);
+```
+
+These code examples demonstrate the flexibility and power of Tiny Crew, showcasing how easily you can set up a crew, add agents with specific goals and tools, configure cost-optimized model routing, and run complex missions.
 
 ## Tiny Crew in Action: Industry Use Cases
 

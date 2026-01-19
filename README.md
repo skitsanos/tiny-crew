@@ -104,19 +104,26 @@ All options can also be overridden programmatically when instantiating `new Logg
 
 ## API Changes
 
+### Version 2.5.0 - Multi-Model Support
+
+**New Feature**: Route different LLM operations to different models based on their purpose. Use cheaper, faster models for routine tasks and more capable models for complex reasoning.
+
+```bash
+# Environment variables for model routing
+DEFAULT_MODEL=gpt-4o                    # Fallback for all purposes
+MODEL_AGENT_SELECTION=gpt-4o-mini       # Selecting which agent handles a task
+MODEL_TASK_EXECUTION=gpt-4o             # Agent task execution
+MODEL_TOOL_SYNTHESIS=gpt-4o             # Synthesizing tool outputs
+MODEL_FINAL_RESPONSE=gpt-4o             # Crew final response
+MODEL_GOAL_ACHIEVEMENT=gpt-4o           # Crew goal summary
+MODEL_REFLECTION=gpt-4o-mini            # Agent self-reflection
+```
+
+See [Multi-Model Routing](#multi-model-routing) in Advanced Features for details.
+
 ### Version 2.4.0 Breaking Changes
 
 **Environment Variable Renamed**: `LLM_MODEL` → `DEFAULT_MODEL`
-
-This prepares for future multi-model support where different models can be used for different purposes. Update your `.env` file:
-
-```bash
-# Before (deprecated)
-LLM_MODEL=gpt-4o
-
-# After
-DEFAULT_MODEL=gpt-4o
-```
 
 **Memory System**: The legacy `SharedMemory` system has been replaced with `MemoryStore`. See the [Memory System](#memory-system) section for the new API.
 
@@ -406,6 +413,151 @@ console.log(`Items: ${stats.itemCount}, Tokens: ${stats.totalTokens}`);
 4. **Resource management**: Auto-eviction prevents unbounded memory growth
 
 See `examples/PersistentMemory.ts` for a complete example.
+
+### Multi-Model Routing
+
+TinyCrew supports routing different LLM operations to different models based on their purpose. This enables cost optimization by using cheaper/faster models for routine tasks while reserving more capable models for complex reasoning.
+
+#### Model Purposes
+
+| Purpose | Description | Recommended Model |
+|---------|-------------|-------------------|
+| `agent_selection` | Selecting which agent handles a task | `gpt-4o-mini` |
+| `task_execution` | Agent task execution | `gpt-4o` |
+| `tool_synthesis` | Synthesizing tool outputs into responses | `gpt-4o` |
+| `final_response` | Crew's final response generation | `gpt-4o` |
+| `goal_achievement` | Crew goal summary | `gpt-4o` |
+| `reflection` | Agent self-reflection | `gpt-4o-mini` |
+| `summarization` | Text summarization tasks | `gpt-4o-mini` |
+| `translation` | Text translation tasks | `gpt-4o-mini` |
+| `planning` | Task planning | `gpt-4o` |
+
+#### Environment-Based Configuration
+
+The simplest way to configure model routing is via environment variables:
+
+```bash
+DEFAULT_MODEL=gpt-4o                    # Fallback for all purposes
+MODEL_AGENT_SELECTION=gpt-4o-mini       # Cheap model for agent selection
+MODEL_TASK_EXECUTION=gpt-4o             # Capable model for task work
+MODEL_REFLECTION=gpt-4o-mini            # Cheap model for reflection
+```
+
+TinyCrew automatically loads these when creating a Crew:
+
+```typescript
+// Automatically uses ModelRouter.fromEnv()
+const crew = new Crew({ goal: 'Research AI trends' }, openai);
+```
+
+#### Programmatic Configuration
+
+For more control, create a `ModelRouter` explicitly:
+
+```typescript
+import { Crew, Agent, ModelRouter } from 'tiny-crew';
+
+const router = new ModelRouter({
+  defaultModel: 'gpt-4o',
+  models: {
+    agent_selection: 'gpt-4o-mini',
+    reflection: 'gpt-4o-mini',
+    task_execution: 'gpt-4o'
+  }
+});
+
+const crew = new Crew(
+  { goal: 'Research AI trends' },
+  openai,
+  [],  // chatHistory
+  { modelRouter: router }
+);
+```
+
+#### Per-Agent Model Override
+
+Individual agents can specify a `preferredModel` that overrides the router for their task execution:
+
+```typescript
+const cheapAgent = new Agent({
+  name: 'Summarizer',
+  goal: 'Summarize content quickly',
+  preferredModel: 'gpt-4o-mini',  // Always uses mini for task execution
+  capabilities: ['summarization']
+}, openai);
+
+const powerAgent = new Agent({
+  name: 'Analyst',
+  goal: 'Deep analysis requiring strong reasoning',
+  preferredModel: 'gpt-4o',  // Uses more capable model
+  capabilities: ['analysis', 'reasoning']
+}, openai);
+
+crew.addAgent(cheapAgent);
+crew.addAgent(powerAgent);
+```
+
+The `preferredModel` only affects `task_execution` and `tool_synthesis` purposes. Other purposes (like `reflection`) still use the router.
+
+#### Model Resolution Priority
+
+When determining which model to use for an operation:
+
+1. **Agent's preferredModel** (for task_execution/tool_synthesis only)
+2. **ModelRouter's purpose-specific model** (if configured)
+3. **ModelRouter's defaultModel**
+
+#### Default Model Fallback
+
+When no environment variables are set and no explicit configuration is provided, TinyCrew uses `gpt-4o-mini` as the hardcoded fallback for all purposes. This ensures the system works out of the box without configuration.
+
+**Fallback chain:**
+1. Purpose-specific env var (e.g., `MODEL_TASK_EXECUTION`)
+2. `DEFAULT_MODEL` env var
+3. Hardcoded fallback: `gpt-4o-mini`
+
+#### Model Name Validation
+
+ModelRouter validates model names and warns about potential typos:
+
+```typescript
+// Warns: model doesn't match known patterns
+const router = new ModelRouter({
+  defaultModel: 'gpt-4o-min'  // Typo! Should be 'gpt-4o-mini'
+});
+
+// Suppress warnings for custom/self-hosted models
+const router = new ModelRouter({
+  defaultModel: 'my-custom-model',
+  warnOnUnknown: false
+});
+
+// Use an explicit allowlist for strict validation
+const router = new ModelRouter({
+  defaultModel: 'gpt-4o',
+  allowedModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo']
+});
+```
+
+#### Cost Optimization Strategy
+
+A typical cost-optimized configuration:
+
+```bash
+# Use mini for routine, deterministic tasks
+MODEL_AGENT_SELECTION=gpt-4o-mini
+MODEL_REFLECTION=gpt-4o-mini
+
+# Use capable model for complex reasoning
+MODEL_TASK_EXECUTION=gpt-4o
+MODEL_FINAL_RESPONSE=gpt-4o
+MODEL_GOAL_ACHIEVEMENT=gpt-4o
+
+# Fallback
+DEFAULT_MODEL=gpt-4o
+```
+
+This can reduce costs by 50-70% on routine operations while maintaining quality for complex tasks.
 
 ### Parallel Task Execution
 
