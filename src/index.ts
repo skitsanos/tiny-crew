@@ -31,7 +31,7 @@ async function main()
     }
 
     const openai = new OpenAI({apiKey});
-    const baseModel = process.env.LLM_MODEL || 'gpt-4o-mini';
+    const baseModel = process.env.DEFAULT_MODEL || 'gpt-4o-mini';
 
     // Initialize tools
     const fileWriteTool = new FileWriteTool({

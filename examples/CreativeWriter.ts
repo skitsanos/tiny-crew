@@ -26,7 +26,7 @@ async function runCreativeWritingExample()
     const openai = new OpenAI({
         apiKey: apiKey
     });
-    const baseModel = process.env.LLM_MODEL || 'gpt-4o-mini';
+    const baseModel = process.env.DEFAULT_MODEL || 'gpt-4o-mini';
 
     // Create output directory for story files
     const outputDir = path.join(process.cwd(), 'data');

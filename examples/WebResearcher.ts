@@ -21,7 +21,7 @@ async function runWebScrapeExample()
     }
 
     const openai = new OpenAI({apiKey});
-    const baseModel = process.env.LLM_MODEL || 'gpt-4o';
+    const baseModel = process.env.DEFAULT_MODEL || 'gpt-4o';
 
     // Initialize tools
     const webScrapeTool = new WebScrapeTool({

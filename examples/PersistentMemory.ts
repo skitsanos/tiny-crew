@@ -32,7 +32,7 @@ async function runPersistentMemoryExample() {
     }
 
     const openai = new OpenAI({ apiKey });
-    const baseModel = process.env.LLM_MODEL || 'gpt-4o-mini';
+    const baseModel = process.env.DEFAULT_MODEL || 'gpt-4o-mini';
 
     // Configure JSON file backend for persistent memory
     const memoryBackend = new JSONFileBackend({

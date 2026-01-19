@@ -85,7 +85,7 @@ For more complex scenarios involving dynamic planning, autonomous exploration, o
 
    ```
    OPENAI_API_KEY=your_api_key_here
-   LLM_MODEL=gpt-4o
+   DEFAULT_MODEL=gpt-4o
    LOG_LEVEL=INFO
    LOG_DUAL_OUTPUT=false # set to true to mirror structured JSON logs
    LOG_JSON_STREAM=stdout # use 'stderr' to send JSON logs to stderr
@@ -103,6 +103,24 @@ TinyCrew ships with a flexible logger that works in both Bun and Node runtimes. 
 All options can also be overridden programmatically when instantiating `new Logger(...)`.
 
 ## API Changes
+
+### Version 2.4.0 Breaking Changes
+
+**Environment Variable Renamed**: `LLM_MODEL` → `DEFAULT_MODEL`
+
+This prepares for future multi-model support where different models can be used for different purposes. Update your `.env` file:
+
+```bash
+# Before (deprecated)
+LLM_MODEL=gpt-4o
+
+# After
+DEFAULT_MODEL=gpt-4o
+```
+
+**Memory System**: The legacy `SharedMemory` system has been replaced with `MemoryStore`. See the [Memory System](#memory-system) section for the new API.
+
+---
 
 **Version 2.3.0+** introduces significant updates to improve reliability and performance:
 
@@ -170,7 +188,7 @@ const logger = new Logger('TinyCrew', { colorize: true });
 async function main() {
   // Configure OpenAI client
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const baseModel = process.env.LLM_MODEL || 'gpt-4o';
+  const baseModel = process.env.DEFAULT_MODEL || 'gpt-4o';
   
   // Create a file writing tool
   const fileWriteTool = new FileWriteTool({
