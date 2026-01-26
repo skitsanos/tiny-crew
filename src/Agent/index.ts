@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
 import { randomUUID } from 'crypto';
 import type OpenAI from 'openai';
+import { zodTextFormat } from 'openai/helpers/zod';
 import {
     type AgentConfig,
     AgentEvent,
@@ -40,6 +41,7 @@ export class Agent extends EventEmitter {
     private taskHistory: Map<string, Task>;
     private modelRouter?: ModelRouter;
     private readonly preferredModel?: string;
+    private readonly responseSchema?: { schema: any; name: string };
 
     /**
      * Create a new Agent instance
@@ -53,6 +55,7 @@ export class Agent extends EventEmitter {
         this.systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
         this.capabilities = config.capabilities || [];
         this.preferredModel = config.preferredModel;
+        this.responseSchema = config.responseSchema;
         this.llmConfig = {
             model: config.model || 'gpt-4o-mini',
             temperature: config.temperature || 0.7,
@@ -377,6 +380,14 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         if (this.llmConfig.maxTokens) {
             request.max_output_tokens = this.llmConfig.maxTokens;
+        }
+
+        // Add structured output format if responseSchema is provided
+        if (this.responseSchema) {
+            request.text = {
+                format: zodTextFormat(this.responseSchema.schema, this.responseSchema.name)
+            };
+            this.logger.info(`Using structured output schema: ${this.responseSchema.name}`);
         }
 
         if (allowTools && this.tools.size > 0) {

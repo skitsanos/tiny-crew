@@ -53,6 +53,15 @@ export interface AgentConfig {
     metadata?: Record<string, any>;
     /** Preferred model for task execution (overrides ModelRouter for this agent) */
     preferredModel?: string;
+    /**
+     * Zod schema for structured output. When provided, the agent will use
+     * OpenAI's Structured Outputs feature to ensure responses match the schema.
+     * Use with zodTextFormat from 'openai/helpers/zod'.
+     */
+    responseSchema?: {
+        schema: any; // Zod schema
+        name: string; // Schema name for the API
+    };
 }
 
 // Tool-related interfaces
