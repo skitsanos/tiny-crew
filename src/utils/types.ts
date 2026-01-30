@@ -62,6 +62,18 @@ export interface AgentConfig {
         schema: any; // Zod schema
         name: string; // Schema name for the API
     };
+    /**
+     * Maximum number of messages to keep in conversation history.
+     * Older messages are removed when limit is exceeded.
+     * Default: 50
+     */
+    maxHistoryMessages?: number;
+    /**
+     * Whether to automatically manage conversation history.
+     * When true, the chat() method will maintain context across calls.
+     * Default: true
+     */
+    autoManageHistory?: boolean;
 }
 
 // Tool-related interfaces
@@ -159,7 +171,28 @@ export enum AgentEvent {
     TASK_STARTED = 'task_started',
     TASK_COMPLETED = 'task_completed',
     TASK_FAILED = 'task_failed',
-    TOOL_USED = 'tool_used'
+    TOOL_USED = 'tool_used',
+    MESSAGE_ADDED = 'message_added',
+    HISTORY_CLEARED = 'history_cleared',
+    HISTORY_TRIMMED = 'history_trimmed',
+    STREAM_CHUNK = 'stream_chunk',
+    STREAM_END = 'stream_end',
+    // Agent-to-agent messaging events
+    MESSAGE_SENT = 'agent_message_sent',
+    MESSAGE_RECEIVED = 'agent_message_received'
+}
+
+/**
+ * Streaming chunk types for progressive response delivery
+ */
+export type StreamChunkType = 'text' | 'tool_call_start' | 'tool_call_end' | 'done';
+
+export interface StreamChunk {
+    type: StreamChunkType;
+    content?: string;
+    toolName?: string;
+    toolCallId?: string;
+    isComplete: boolean;
 }
 
 export enum CrewEvent {
@@ -186,3 +219,30 @@ export interface ConversationMessage {
     content: string;
     name?: string;
 }
+
+// Agent-to-Agent Messaging Types
+export type AgentMessageType =
+    | 'request'      // Request for action or information
+    | 'response'     // Response to a request
+    | 'notification' // One-way notification
+    | 'handoff'      // Transfer of task/conversation
+    | 'broadcast';   // Message to multiple agents
+
+export interface AgentMessage {
+    id: string;
+    from: string;        // Sender agent name
+    to: string | string[]; // Recipient agent name(s)
+    type: AgentMessageType;
+    content: string;
+    metadata?: Record<string, any>;
+    timestamp: number;
+    replyTo?: string;    // ID of message being replied to
+    priority?: 'low' | 'normal' | 'high' | 'urgent';
+}
+
+export interface MessageHandlerContext {
+    message: AgentMessage;
+    reply: (content: string, metadata?: Record<string, any>) => void;
+}
+
+export type MessageHandler = (context: MessageHandlerContext) => void | Promise<void>;

@@ -5,15 +5,20 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import {
     type AgentConfig,
     AgentEvent,
+    type AgentMessage,
     type ConversationMessage,
     type LlmConfig,
+    type MessageHandler,
+    type MessageHandlerContext,
     type ModelPurpose,
+    type StreamChunk,
     type Task,
     type TaskError,
     type TaskResult,
     TaskStatus,
     type Tool
 } from '@/utils/types.ts';
+import { MessageBus, type SendMessageOptions } from './MessageBus';
 import Logger from '@/utils/logger.ts';
 import dedent from 'dedent';
 import type {
@@ -43,6 +48,17 @@ export class Agent extends EventEmitter {
     private readonly preferredModel?: string;
     private readonly responseSchema?: { schema: any; name: string };
 
+    /** Conversation history for multi-turn chats */
+    private conversationHistory: ConversationMessage[] = [];
+    /** Maximum messages to keep in history */
+    private readonly maxHistoryMessages: number;
+    /** Whether to auto-manage history */
+    private readonly autoManageHistory: boolean;
+    /** Message bus for agent-to-agent communication */
+    private messageBus: MessageBus | null = null;
+    /** Message handlers registered by this agent */
+    private readonly messageHandlers: MessageHandler[] = [];
+
     /**
      * Create a new Agent instance
      */
@@ -65,6 +81,11 @@ export class Agent extends EventEmitter {
         this.tools = new Map(tools.map(tool => [tool.name, tool]));
         this.taskHistory = new Map();
         this.logger = new Logger(`Agent-${this.name}`);
+
+        // Initialize conversation history management
+        this.maxHistoryMessages = config.maxHistoryMessages ?? 50;
+        this.autoManageHistory = config.autoManageHistory ?? true;
+        this.conversationHistory = [];
 
         // Register default event handlers
         this.on(AgentEvent.TASK_COMPLETED, this.handleTaskComplete.bind(this));
@@ -184,6 +205,650 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      */
     getTasks(): Task[] {
         return Array.from(this.taskHistory.values());
+    }
+
+    // ==========================================
+    // Conversation History Management
+    // ==========================================
+
+    /**
+     * Get the current conversation history
+     */
+    getHistory(): ConversationMessage[] {
+        return [...this.conversationHistory];
+    }
+
+    /**
+     * Get the number of messages in history
+     */
+    getHistoryLength(): number {
+        return this.conversationHistory.length;
+    }
+
+    /**
+     * Clear the conversation history
+     */
+    clearHistory(): void {
+        const previousLength = this.conversationHistory.length;
+        this.conversationHistory = [];
+        this.emit(AgentEvent.HISTORY_CLEARED, {
+            agent: this.name,
+            previousLength,
+            timestamp: Date.now()
+        });
+        this.logger.info(`Conversation history cleared (was ${previousLength} messages)`);
+    }
+
+    /**
+     * Add a message to history
+     */
+    addToHistory(message: ConversationMessage): void {
+        this.conversationHistory.push(message);
+        this.emit(AgentEvent.MESSAGE_ADDED, {
+            agent: this.name,
+            role: message.role,
+            timestamp: Date.now()
+        });
+
+        // Trim if needed
+        if (this.conversationHistory.length > this.maxHistoryMessages) {
+            this.trimHistory();
+        }
+    }
+
+    /**
+     * Trim history to maxHistoryMessages
+     * Removes oldest messages first, but preserves the first system message if present
+     */
+    private trimHistory(): void {
+        const toRemove = this.conversationHistory.length - this.maxHistoryMessages;
+        if (toRemove <= 0) return;
+
+        // Keep first message if it's a system message
+        const hasSystemFirst = this.conversationHistory[0]?.role === 'system';
+        const startIndex = hasSystemFirst ? 1 : 0;
+
+        // Remove oldest messages after the potential system message
+        this.conversationHistory.splice(startIndex, toRemove);
+
+        this.emit(AgentEvent.HISTORY_TRIMMED, {
+            agent: this.name,
+            removedCount: toRemove,
+            currentLength: this.conversationHistory.length,
+            timestamp: Date.now()
+        });
+        this.logger.debug(`Trimmed ${toRemove} messages from history`);
+    }
+
+    /**
+     * Chat with the agent using auto-managed conversation history.
+     * This is the recommended method for multi-turn conversations.
+     *
+     * @param message - The user message
+     * @param context - Optional additional context to include
+     * @returns The agent's response
+     */
+    async chat(message: string, context: string = ''): Promise<string> {
+        // Add user message to history
+        this.addToHistory({ role: 'user', content: message });
+
+        // Perform task with full history
+        const response = await this.performTask(
+            message,
+            context,
+            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [] // Exclude the message we just added (it's in taskDescription)
+        );
+
+        // Add assistant response to history
+        this.addToHistory({ role: 'assistant', content: response });
+
+        return response;
+    }
+
+    /**
+     * Set the conversation history (useful for restoring state)
+     */
+    setHistory(history: ConversationMessage[]): void {
+        this.conversationHistory = [...history];
+        this.logger.info(`Conversation history set to ${history.length} messages`);
+    }
+
+    /**
+     * Chat with streaming response. Yields chunks as they arrive from the LLM.
+     * Automatically manages conversation history.
+     *
+     * @param message - The user message
+     * @param context - Optional additional context to include
+     * @param onChunk - Optional callback for each chunk (alternative to iteration)
+     * @yields StreamChunk objects containing text fragments and completion status
+     * @returns The complete response text after iteration completes
+     *
+     * @example
+     * ```typescript
+     * // Using async iteration
+     * let fullResponse = '';
+     * for await (const chunk of agent.chatStream('Hello')) {
+     *     if (chunk.content) {
+     *         process.stdout.write(chunk.content);
+     *         fullResponse += chunk.content;
+     *     }
+     * }
+     *
+     * // Using callback
+     * const response = await agent.chatStream('Hello', '', (chunk) => {
+     *     process.stdout.write(chunk.content || '');
+     * });
+     * ```
+     */
+    async *chatStream(
+        message: string,
+        context: string = '',
+        onChunk?: (chunk: StreamChunk) => void
+    ): AsyncGenerator<StreamChunk, string, unknown> {
+        // Add user message to history
+        this.addToHistory({ role: 'user', content: message });
+
+        let fullResponse = '';
+
+        // Stream the task with history
+        for await (const chunk of this.performTaskStream(
+            message,
+            context,
+            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : []
+        )) {
+            if (chunk.content) {
+                fullResponse += chunk.content;
+            }
+
+            // Call the optional callback
+            if (onChunk) {
+                onChunk(chunk);
+            }
+
+            yield chunk;
+        }
+
+        // Add assistant response to history
+        this.addToHistory({ role: 'assistant', content: fullResponse });
+
+        return fullResponse;
+    }
+
+    /**
+     * Perform a task with streaming response.
+     * Yields chunks as they arrive from the LLM.
+     *
+     * @param taskDescription - The task to perform
+     * @param memoryContext - Pre-built context string from MemoryStore.buildContext()
+     * @param chatHistory - Previous conversation messages
+     * @yields StreamChunk objects containing text fragments, tool info, and completion status
+     */
+    async *performTaskStream(
+        taskDescription: string,
+        memoryContext: string = '',
+        chatHistory: ConversationMessage[] = []
+    ): AsyncGenerator<StreamChunk, string, unknown> {
+        const task = this.createTask(taskDescription);
+        this.updateTaskStatus(task.id, TaskStatus.IN_PROGRESS);
+
+        this.logger.info(`Starting streaming task: ${taskDescription.substring(0, 50)}...`);
+        this.emit(AgentEvent.TASK_STARTED, {
+            agent: this.name,
+            task: taskDescription,
+            taskId: task.id,
+            timestamp: Date.now(),
+            streaming: true
+        });
+
+        const conversation: ResponseInputItem[] = [];
+        conversation.push(this.buildMessage('system', this.systemPrompt));
+
+        if (this.tools.size > 0) {
+            conversation.push(this.buildMessage('system', this.buildToolInstruction()));
+        }
+
+        if (memoryContext.length > 0) {
+            conversation.push(this.buildMessage('system', memoryContext));
+        }
+
+        for (const message of chatHistory) {
+            conversation.push(this.toResponseInputItem(message));
+        }
+
+        conversation.push(this.buildMessage('user', taskDescription));
+
+        let fullText = '';
+        const toolsUsed: string[] = [];
+
+        try {
+            // Stream the response
+            const { text, toolCalls } = yield* this.streamResponse(conversation);
+            fullText = text;
+
+            // If we have tool calls, execute them and get a follow-up response
+            if (toolCalls.length > 0) {
+                this.logger.info(`Processing ${toolCalls.length} tool calls from stream`);
+
+                // Yield tool call notifications
+                for (const tc of toolCalls) {
+                    yield {
+                        type: 'tool_call_start',
+                        toolName: tc.name,
+                        toolCallId: tc.call_id,
+                        isComplete: false
+                    };
+
+                    toolsUsed.push(tc.name);
+                    const parseResult = this.parseToolArguments(tc.arguments);
+
+                    let output: string;
+                    if (!parseResult.success) {
+                        output = JSON.stringify({
+                            error: 'Invalid JSON arguments',
+                            details: parseResult.error
+                        });
+                    } else {
+                        try {
+                            const result = await this.executeTool(tc.name, parseResult.args);
+                            output = typeof result === 'string' ? result : JSON.stringify(result);
+                        } catch (error) {
+                            output = JSON.stringify({
+                                error: error instanceof Error ? error.message : String(error)
+                            });
+                        }
+                    }
+
+                    yield {
+                        type: 'tool_call_end',
+                        toolName: tc.name,
+                        toolCallId: tc.call_id,
+                        content: output,
+                        isComplete: false
+                    };
+
+                    // Store tool output for follow-up
+                    conversation.push({
+                        type: 'function_call_output',
+                        call_id: tc.call_id,
+                        output
+                    } as ResponseInputItem);
+                }
+
+                // Get synthesis response (non-streaming for tool follow-up to avoid complexity)
+                const synthesisResponse = await this.createResponse(conversation, false);
+                const synthesisText = this.extractTextFromResponse(synthesisResponse);
+
+                // Yield the synthesis as a final chunk
+                if (synthesisText) {
+                    fullText = synthesisText;
+                    yield {
+                        type: 'text',
+                        content: synthesisText,
+                        isComplete: false
+                    };
+                }
+            }
+
+            // Final completion signal
+            yield {
+                type: 'done',
+                isComplete: true
+            };
+
+            this.emit(AgentEvent.STREAM_END, {
+                agent: this.name,
+                task: taskDescription,
+                taskId: task.id,
+                fullText,
+                toolsUsed,
+                timestamp: Date.now()
+            });
+
+            this.updateTaskStatus(task.id, TaskStatus.COMPLETED, fullText);
+
+            const taskResult: TaskResult = {
+                agent: this.name,
+                task: taskDescription,
+                result: fullText,
+                timestamp: Date.now(),
+                metadata: {
+                    taskId: task.id,
+                    model: this.llmConfig.model,
+                    toolsUsed: toolsUsed.length > 0 ? toolsUsed : undefined,
+                    streaming: true
+                }
+            };
+
+            this.emit(AgentEvent.TASK_COMPLETED, taskResult);
+            return fullText;
+        } catch (error) {
+            this.logger.error(`Error in streaming task: ${error}`);
+            this.updateTaskStatus(
+                task.id,
+                TaskStatus.FAILED,
+                undefined,
+                error instanceof Error ? error : new Error(String(error))
+            );
+
+            const taskError: TaskError = {
+                agent: this.name,
+                task: taskDescription,
+                error: error instanceof Error ? error : new Error(String(error)),
+                timestamp: Date.now(),
+                metadata: { taskId: task.id }
+            };
+
+            this.emit(AgentEvent.TASK_FAILED, taskError);
+            throw error;
+        }
+    }
+
+    /**
+     * Internal method to stream a response and collect tool calls
+     */
+    private async *streamResponse(
+        conversation: ResponseInputItem[]
+    ): AsyncGenerator<StreamChunk, { text: string; toolCalls: Array<{ call_id: string; name: string; arguments: string }> }, unknown> {
+        const request: Record<string, any> = {
+            model: this.getModelForPurpose('task_execution'),
+            input: conversation,
+            temperature: this.llmConfig.temperature,
+            stream: true
+        };
+
+        if (this.llmConfig.maxTokens) {
+            request.max_output_tokens = this.llmConfig.maxTokens;
+        }
+
+        if (this.tools.size > 0) {
+            request.tools = this.buildResponsesToolDefinitions();
+            request.tool_choice = 'auto';
+        }
+
+        this.logger.debug('Starting streaming request');
+
+        const stream = await this.client.responses.create(request);
+
+        let fullText = '';
+        const toolCalls: Array<{ call_id: string; name: string; arguments: string }> = [];
+        const pendingToolCalls: Map<string, { name: string; arguments: string }> = new Map();
+
+        // Handle the stream
+        for await (const event of stream as AsyncIterable<any>) {
+            // Handle different event types from the streaming API
+            if (event.type === 'response.output_text.delta') {
+                const delta = event.delta || '';
+                fullText += delta;
+
+                const chunk: StreamChunk = {
+                    type: 'text',
+                    content: delta,
+                    isComplete: false
+                };
+
+                this.emit(AgentEvent.STREAM_CHUNK, {
+                    agent: this.name,
+                    chunk,
+                    timestamp: Date.now()
+                });
+
+                yield chunk;
+            } else if (event.type === 'response.function_call_arguments.delta') {
+                // Accumulate function arguments
+                const callId = event.call_id || event.item_id;
+                if (callId) {
+                    const existing = pendingToolCalls.get(callId) || { name: '', arguments: '' };
+                    existing.arguments += event.delta || '';
+                    pendingToolCalls.set(callId, existing);
+                }
+            } else if (event.type === 'response.output_item.added') {
+                // New output item (could be a function call)
+                if (event.item?.type === 'function_call') {
+                    const callId = event.item.call_id || event.item.id;
+                    pendingToolCalls.set(callId, {
+                        name: event.item.name || '',
+                        arguments: ''
+                    });
+                }
+            } else if (event.type === 'response.output_item.done') {
+                // Output item completed
+                if (event.item?.type === 'function_call') {
+                    const callId = event.item.call_id || event.item.id;
+                    const pending = pendingToolCalls.get(callId);
+                    toolCalls.push({
+                        call_id: callId,
+                        name: event.item.name || pending?.name || '',
+                        arguments: event.item.arguments || pending?.arguments || ''
+                    });
+                    pendingToolCalls.delete(callId);
+                }
+            } else if (event.type === 'response.completed' || event.type === 'response.done') {
+                // Stream completed - extract any remaining tool calls from the final response
+                if (event.response?.output) {
+                    for (const item of event.response.output) {
+                        if (item.type === 'function_call' && !toolCalls.find(tc => tc.call_id === item.call_id)) {
+                            toolCalls.push({
+                                call_id: item.call_id,
+                                name: item.name,
+                                arguments: item.arguments
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        return { text: fullText, toolCalls };
+    }
+
+    /**
+     * Export conversation state for persistence
+     */
+    exportConversationState(): {
+        history: ConversationMessage[];
+        agentId: string;
+        agentName: string;
+        timestamp: number;
+    } {
+        return {
+            history: this.getHistory(),
+            agentId: this.id,
+            agentName: this.name,
+            timestamp: Date.now()
+        };
+    }
+
+    // ==========================================
+    // Agent-to-Agent Messaging
+    // ==========================================
+
+    /**
+     * Connect this agent to a message bus for agent-to-agent communication.
+     * Once connected, the agent can send and receive messages from other agents.
+     *
+     * @param bus - The message bus to connect to
+     *
+     * @example
+     * ```typescript
+     * const bus = new MessageBus();
+     * agentA.connectToMessageBus(bus);
+     * agentB.connectToMessageBus(bus);
+     *
+     * agentA.sendMessage('AgentB', 'Hello!');
+     * ```
+     */
+    connectToMessageBus(bus: MessageBus): void {
+        if (this.messageBus) {
+            this.disconnectFromMessageBus();
+        }
+
+        this.messageBus = bus;
+
+        // Register with the bus using our combined handler
+        bus.registerAgent(this.name, async (ctx) => {
+            this.emit(AgentEvent.MESSAGE_RECEIVED, {
+                agent: this.name,
+                from: ctx.message.from,
+                message: ctx.message,
+                timestamp: Date.now()
+            });
+
+            // Call all registered handlers
+            for (const handler of this.messageHandlers) {
+                await handler(ctx);
+            }
+        });
+
+        this.logger.info(`Connected to message bus`);
+    }
+
+    /**
+     * Disconnect this agent from the message bus
+     */
+    disconnectFromMessageBus(): void {
+        if (this.messageBus) {
+            this.messageBus.unregisterAgent(this.name);
+            this.messageBus = null;
+            this.logger.info(`Disconnected from message bus`);
+        }
+    }
+
+    /**
+     * Check if this agent is connected to a message bus
+     */
+    isConnectedToMessageBus(): boolean {
+        return this.messageBus !== null;
+    }
+
+    /**
+     * Send a message to another agent.
+     * The agent must be connected to a message bus.
+     *
+     * @param to - The name of the recipient agent (or array of names for multi-cast)
+     * @param content - The message content
+     * @param options - Optional message options (type, metadata, priority)
+     * @returns The sent message object
+     *
+     * @example
+     * ```typescript
+     * // Simple notification
+     * agent.sendMessage('OtherAgent', 'Task completed');
+     *
+     * // Request with metadata
+     * agent.sendMessage('OtherAgent', 'Process this data', {
+     *     type: 'request',
+     *     metadata: { data: someData },
+     *     priority: 'high'
+     * });
+     *
+     * // Multi-cast to multiple agents
+     * agent.sendMessage(['Agent1', 'Agent2'], 'Broadcast message');
+     * ```
+     */
+    sendMessage(
+        to: string | string[],
+        content: string,
+        options: SendMessageOptions = {}
+    ): AgentMessage {
+        if (!this.messageBus) {
+            throw new Error('Agent is not connected to a message bus');
+        }
+
+        const message = this.messageBus.send(this.name, to, content, options);
+
+        this.emit(AgentEvent.MESSAGE_SENT, {
+            agent: this.name,
+            to,
+            message,
+            timestamp: Date.now()
+        });
+
+        return message;
+    }
+
+    /**
+     * Send a message and wait for a reply.
+     * Useful for request-response patterns between agents.
+     *
+     * @param to - The name of the recipient agent
+     * @param content - The message content
+     * @param options - Optional message options
+     * @param timeoutMs - Timeout in milliseconds (default: 30000)
+     * @returns Promise resolving to the reply message
+     *
+     * @example
+     * ```typescript
+     * const reply = await agent.sendMessageAndWait('OtherAgent', 'What is the status?');
+     * console.log('Reply:', reply.content);
+     * ```
+     */
+    async sendMessageAndWait(
+        to: string,
+        content: string,
+        options: SendMessageOptions = {},
+        timeoutMs: number = 30000
+    ): Promise<AgentMessage> {
+        if (!this.messageBus) {
+            throw new Error('Agent is not connected to a message bus');
+        }
+
+        return this.messageBus.sendAndWait(this.name, to, content, options, timeoutMs);
+    }
+
+    /**
+     * Broadcast a message to all agents on the message bus.
+     *
+     * @param content - The message content
+     * @param options - Optional message options
+     * @returns The sent message object
+     */
+    broadcastMessage(content: string, options: Omit<SendMessageOptions, 'type'> = {}): AgentMessage {
+        if (!this.messageBus) {
+            throw new Error('Agent is not connected to a message bus');
+        }
+
+        return this.messageBus.broadcast(this.name, content, options);
+    }
+
+    /**
+     * Register a handler for incoming messages.
+     * Multiple handlers can be registered and will be called in order.
+     *
+     * @param handler - Function to handle incoming messages
+     * @returns A function to unregister the handler
+     *
+     * @example
+     * ```typescript
+     * const unsubscribe = agent.onMessage((ctx) => {
+     *     console.log(`Received from ${ctx.message.from}: ${ctx.message.content}`);
+     *
+     *     // Reply if it's a request
+     *     if (ctx.message.type === 'request') {
+     *         ctx.reply('Here is my response');
+     *     }
+     * });
+     *
+     * // Later, to stop receiving messages:
+     * unsubscribe();
+     * ```
+     */
+    onMessage(handler: MessageHandler): () => void {
+        this.messageHandlers.push(handler);
+
+        // Return unsubscribe function
+        return () => {
+            const index = this.messageHandlers.indexOf(handler);
+            if (index !== -1) {
+                this.messageHandlers.splice(index, 1);
+            }
+        };
+    }
+
+    /**
+     * Get the number of registered message handlers
+     */
+    getMessageHandlerCount(): number {
+        return this.messageHandlers.length;
     }
 
     /**
