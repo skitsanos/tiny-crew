@@ -88,15 +88,21 @@ export class FileWriteTool implements Tool {
      * Validates all input arguments
      */
     public validateInput(rawArgs: FileWriteArgs | Record<string, any>): boolean {
+        // Check for undefined/null content BEFORE normalizing (normalizeArgs converts them to empty string)
+        if (rawArgs && typeof rawArgs === 'object') {
+            const candidate = rawArgs as Record<string, unknown>;
+            const contentCandidate = candidate.content ?? candidate.text ?? candidate.data;
+
+            if (contentCandidate === undefined || contentCandidate === null) {
+                this.logger.warn('Content is required (use empty string to clear file)');
+                return false;
+            }
+        }
+
         const args = this.normalizeArgs(rawArgs);
 
         if (!args.filename) {
             this.logger.warn('Invalid filename provided');
-            return false;
-        }
-
-        if (!args.content) {
-            this.logger.warn('Invalid content provided');
             return false;
         }
 
@@ -166,12 +172,14 @@ export class FileWriteTool implements Tool {
             const filename = this.isNonEmptyString(filenameCandidate) ? filenameCandidate.trim() : '';
 
             let content: string = '';
-            if (this.isNonEmptyString(contentCandidate))
+            if (typeof contentCandidate === 'string')
             {
+                // Keep string content as-is (including empty strings)
                 content = contentCandidate;
             }
-            else if (contentCandidate !== undefined)
+            else if (contentCandidate !== undefined && contentCandidate !== null)
             {
+                // Non-string, non-null/undefined: serialize to JSON
                 try
                 {
                     content = JSON.stringify(contentCandidate, null, 2);

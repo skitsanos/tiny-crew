@@ -35,8 +35,8 @@ export class TextPromptTool implements Tool {
     private readonly promptTemplate: string;
     private readonly systemPrompt: string;
     private readonly model: string;
-    private readonly temperature: number;
-    private readonly maxTokens: number;
+    private readonly temperature?: number;
+    private readonly maxTokens?: number;
     private readonly logger: Logger;
     private readonly client: OpenAI;
     private readonly purpose: ModelPurpose;

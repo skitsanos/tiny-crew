@@ -8,13 +8,13 @@
     "@types/jsdom": "^27.0.0"
   },
   "peerDependencies": {
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "openai": "^6.17.0"
   },
   "dependencies": {
-    "cheerio": "^1.1.2",
+    "cheerio": "^1.2.0",
     "dayjs": "^1.11.19",
     "dedent": "^1.7.1",
-    "jsdom": "^27.4.0",
-    "openai": "^6.16.0"
+    "jsdom": "^27.4.0"
   }
 }

@@ -256,9 +256,9 @@ describe('MessageBus', () => {
             bus.registerAgent('Sender', () => {
                 received.push('Sender received - should not happen');
             });
-            bus.registerAgent('AgentA', () => received.push('A'));
-            bus.registerAgent('AgentB', () => received.push('B'));
-            bus.registerAgent('AgentC', () => received.push('C'));
+            bus.registerAgent('AgentA', () => { received.push('A'); });
+            bus.registerAgent('AgentB', () => { received.push('B'); });
+            bus.registerAgent('AgentC', () => { received.push('C'); });
 
             bus.broadcast('Sender', 'Broadcast message');
 
@@ -289,9 +289,9 @@ describe('MessageBus', () => {
         it('sends to multiple recipients', async () => {
             const received: string[] = [];
 
-            bus.registerAgent('A', () => received.push('A'));
-            bus.registerAgent('B', () => received.push('B'));
-            bus.registerAgent('C', () => received.push('C'));
+            bus.registerAgent('A', () => { received.push('A'); });
+            bus.registerAgent('B', () => { received.push('B'); });
+            bus.registerAgent('C', () => { received.push('C'); });
 
             bus.send('Sender', ['A', 'C'], 'Multi-cast');
 
@@ -441,8 +441,8 @@ describe('Agent Messaging', () => {
             agentC.connectToMessageBus(bus);
 
             const received: string[] = [];
-            agentB.onMessage(() => received.push('B'));
-            agentC.onMessage(() => received.push('C'));
+            agentB.onMessage(() => { received.push('B'); });
+            agentC.onMessage(() => { received.push('C'); });
 
             agentA.sendMessage(['AgentB', 'AgentC'], 'Multi-message');
 
@@ -493,8 +493,8 @@ describe('Agent Messaging', () => {
             agentC.connectToMessageBus(bus);
 
             const received: string[] = [];
-            agentB.onMessage(() => received.push('B'));
-            agentC.onMessage(() => received.push('C'));
+            agentB.onMessage(() => { received.push('B'); });
+            agentC.onMessage(() => { received.push('C'); });
 
             agentA.broadcastMessage('Announcement!');
 

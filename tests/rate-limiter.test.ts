@@ -2,7 +2,7 @@
  * Tests for RateLimiter utility
  */
 
-import { describe, expect, it, beforeEach } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { RateLimiter, withRateLimit, estimateTokens, type RateLimiterConfig } from '../src/utils/rateLimiter';
 
 describe('RateLimiter', () => {

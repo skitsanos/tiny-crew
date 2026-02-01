@@ -42,4 +42,37 @@ describe('FileWriteTool path validation', () => {
 
     await expect(tool.use({ filename: outsidePath, content: 'nope' })).rejects.toThrow('Invalid file path or content');
   });
+
+  it('allows empty content for truncating files', async () => {
+    // First write some content
+    await tool.use({
+      filename: 'truncate-test.txt',
+      content: 'initial content'
+    });
+
+    let saved = readFileSync(join(baseDir, 'truncate-test.txt'), 'utf8');
+    expect(saved).toBe('initial content');
+
+    // Now truncate with empty content
+    const result = await tool.use({
+      filename: 'truncate-test.txt',
+      content: ''
+    });
+
+    expect(result).toContain('Content successfully written');
+    saved = readFileSync(join(baseDir, 'truncate-test.txt'), 'utf8');
+    expect(saved).toBe('');
+  });
+
+  it('validates empty content passes validation', () => {
+    expect(tool.validateInput({ filename: 'empty.txt', content: '' })).toBe(true);
+  });
+
+  it('rejects undefined content', () => {
+    expect(tool.validateInput({ filename: 'test.txt', content: undefined })).toBe(false);
+  });
+
+  it('rejects null content', () => {
+    expect(tool.validateInput({ filename: 'test.txt', content: null })).toBe(false);
+  });
 });

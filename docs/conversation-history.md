@@ -14,8 +14,11 @@ const agent = new Agent(
     {
         name: 'Assistant',
         goal: 'Help users with their questions',
-        maxHistoryMessages: 50,    // Maximum messages to keep (default: 50)
-        autoManageHistory: true    // Auto-manage history in chat() (default: true)
+        maxHistoryMessages: 50,       // Maximum messages to keep (default: 50)
+        autoManageHistory: true,      // Auto-manage history in chat() (default: true)
+        enableSummarization: true,    // Enable automatic summarization (default: false)
+        summarizationThreshold: 3000, // Token threshold to trigger summarization
+        summarizationModel: 'gpt-4o-mini' // Optional: model for summarization
     },
     new OpenAI()
 );
@@ -27,6 +30,9 @@ const agent = new Agent(
 |--------|------|---------|-------------|
 | `maxHistoryMessages` | number | 50 | Maximum number of messages to keep in history. Older messages are removed when this limit is exceeded. |
 | `autoManageHistory` | boolean | true | When true, the `chat()` method automatically maintains conversation history. |
+| `enableSummarization` | boolean | false | Enable automatic summarization of old messages when history exceeds the token threshold. |
+| `summarizationThreshold` | number | 3000 | Estimated token count that triggers automatic summarization. |
+| `summarizationModel` | string | (agent's model) | Optional model to use for summarization (can use a faster/cheaper model). |
 
 ## Using the chat() Method
 
@@ -143,6 +149,93 @@ const agent = new Agent({
 
 // After 12 messages, the 2 oldest will be trimmed
 ```
+
+## Conversation Summarization
+
+Instead of simply discarding old messages, you can enable automatic summarization. This compresses older conversation history into a concise summary while preserving key information.
+
+### Enabling Summarization
+
+```typescript
+const agent = new Agent({
+    name: 'Assistant',
+    goal: 'Help users',
+    maxHistoryMessages: 50,
+    enableSummarization: true,        // Enable the feature
+    summarizationThreshold: 3000,     // Trigger when ~3000 tokens
+    summarizationModel: 'gpt-4o-mini' // Use a fast model for summaries
+}, new OpenAI());
+```
+
+When enabled, the agent will:
+1. Estimate the token count of conversation history
+2. If tokens exceed `summarizationThreshold`, trigger summarization
+3. Compress old messages into a summary
+4. Keep the most recent messages intact
+5. Inject the summary as context for future turns
+
+### Manual Summarization
+
+You can manually trigger summarization at any time:
+
+```typescript
+// Summarize history, keeping the last 10 messages
+const summary = await agent.summarizeHistory();
+
+// Keep more recent messages
+const summary = await agent.summarizeHistory(20);
+```
+
+### Summarization Methods
+
+| Method | Description |
+|--------|-------------|
+| `summarizeHistory(keepRecentCount?)` | Compress old messages into a summary |
+| `getConversationSummary()` | Get the current summary text |
+| `setConversationSummary(summary)` | Restore a previous summary |
+| `isSummarizationEnabled()` | Check if summarization is enabled |
+| `estimateHistoryTokens()` | Get estimated token count |
+
+### How Summarization Works
+
+1. **Preserves system messages**: The initial system prompt is never summarized
+2. **Keeps recent messages**: The last N messages remain intact for immediate context
+3. **Cumulative summaries**: New summaries build on previous summaries
+4. **Fallback behavior**: If summarization fails, falls back to simple trimming
+
+```typescript
+// Example flow
+const agent = new Agent({
+    name: 'Bot',
+    goal: 'Chat',
+    enableSummarization: true,
+    summarizationThreshold: 2000
+}, client);
+
+// After many messages, when tokens > 2000:
+// - Old messages are summarized
+// - Summary is injected as: "[Previous conversation summary: ...]"
+// - Recent 10 messages are kept
+// - HISTORY_SUMMARIZED event is emitted
+```
+
+### Summarization Event
+
+```typescript
+agent.on(AgentEvent.HISTORY_SUMMARIZED, (data) => {
+    console.log(`Summarized ${data.summarizedCount} messages`);
+    console.log(`History reduced from ${data.previousLength} to ${data.newLength}`);
+    console.log(`Summary length: ${data.summaryLength} chars`);
+});
+```
+
+### Best Practices for Summarization
+
+1. **Use a fast model**: Set `summarizationModel` to a cheaper model like `gpt-4o-mini`
+2. **Tune the threshold**: Adjust `summarizationThreshold` based on your context window needs
+3. **Monitor token usage**: Use `estimateHistoryTokens()` to track context size
+4. **Persist summaries**: Save `getConversationSummary()` for session restoration
+5. **Balance recency**: Keep enough recent messages for conversational coherence
 
 ## Events
 

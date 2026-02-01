@@ -9,7 +9,6 @@ import {
     type ConversationMessage,
     type LlmConfig,
     type MessageHandler,
-    type MessageHandlerContext,
     type ModelPurpose,
     type StreamChunk,
     type Task,
@@ -54,6 +53,14 @@ export class Agent extends EventEmitter {
     private readonly maxHistoryMessages: number;
     /** Whether to auto-manage history */
     private readonly autoManageHistory: boolean;
+    /** Whether to enable auto-summarization */
+    private readonly enableSummarization: boolean;
+    /** Token threshold for triggering summarization */
+    private readonly summarizationThreshold: number;
+    /** Model to use for summarization */
+    private readonly summarizationModel?: string;
+    /** Stored conversation summary (from previous summarizations) */
+    private conversationSummary: string = '';
     /** Message bus for agent-to-agent communication */
     private messageBus: MessageBus | null = null;
     /** Message handlers registered by this agent */
@@ -86,6 +93,11 @@ export class Agent extends EventEmitter {
         this.maxHistoryMessages = config.maxHistoryMessages ?? 50;
         this.autoManageHistory = config.autoManageHistory ?? true;
         this.conversationHistory = [];
+
+        // Initialize summarization settings
+        this.enableSummarization = config.enableSummarization ?? false;
+        this.summarizationThreshold = config.summarizationThreshold ?? 3000;
+        this.summarizationModel = config.summarizationModel;
 
         // Register default event handlers
         this.on(AgentEvent.TASK_COMPLETED, this.handleTaskComplete.bind(this));
@@ -242,7 +254,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     /**
      * Add a message to history
      */
-    addToHistory(message: ConversationMessage): void {
+    async addToHistory(message: ConversationMessage): Promise<void> {
         this.conversationHistory.push(message);
         this.emit(AgentEvent.MESSAGE_ADDED, {
             agent: this.name,
@@ -250,19 +262,29 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             timestamp: Date.now()
         });
 
-        // Trim if needed
+        // Trim if needed (may trigger summarization if enabled)
         if (this.conversationHistory.length > this.maxHistoryMessages) {
-            this.trimHistory();
+            await this.trimHistory();
         }
     }
 
     /**
      * Trim history to maxHistoryMessages
-     * Removes oldest messages first, but preserves the first system message if present
+     * Removes oldest messages first, but preserves the first system message if present.
+     * If summarization is enabled, will summarize old messages instead of discarding.
      */
-    private trimHistory(): void {
+    private async trimHistory(): Promise<void> {
         const toRemove = this.conversationHistory.length - this.maxHistoryMessages;
         if (toRemove <= 0) return;
+
+        // Check if we should summarize instead of just trimming
+        if (this.enableSummarization) {
+            const estimatedTokens = this.estimateHistoryTokens();
+            if (estimatedTokens > this.summarizationThreshold) {
+                await this.summarizeHistory();
+                return;
+            }
+        }
 
         // Keep first message if it's a system message
         const hasSystemFirst = this.conversationHistory[0]?.role === 'system';
@@ -281,6 +303,178 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     }
 
     /**
+     * Estimate the number of tokens in the conversation history.
+     * Uses a rough approximation of ~4 characters per token.
+     */
+    estimateHistoryTokens(): number {
+        let totalChars = 0;
+        for (const message of this.conversationHistory) {
+            totalChars += message.content.length;
+        }
+        // Also include existing summary if any
+        totalChars += this.conversationSummary.length;
+        // Approximate 4 characters per token
+        return Math.ceil(totalChars / 4);
+    }
+
+    /**
+     * Summarize older conversation history to reduce context size while preserving key information.
+     * This method compresses old messages into a summary and keeps only recent messages.
+     *
+     * @param keepRecentCount - Number of recent messages to keep without summarizing (default: 10)
+     * @returns The generated summary
+     *
+     * @example
+     * ```typescript
+     * // Manually trigger summarization
+     * const summary = await agent.summarizeHistory();
+     *
+     * // Keep more recent messages
+     * const summary = await agent.summarizeHistory(20);
+     * ```
+     */
+    async summarizeHistory(keepRecentCount: number = 10): Promise<string> {
+        // Don't summarize if there's nothing to summarize
+        if (this.conversationHistory.length <= keepRecentCount) {
+            this.logger.debug('Not enough history to summarize');
+            return this.conversationSummary;
+        }
+
+        // Separate messages to summarize and messages to keep
+        const hasSystemFirst = this.conversationHistory[0]?.role === 'system';
+        const startIndex = hasSystemFirst ? 1 : 0;
+
+        const messagesToKeep = this.conversationHistory.slice(-keepRecentCount);
+        const messagesToSummarize = this.conversationHistory.slice(
+            startIndex,
+            this.conversationHistory.length - keepRecentCount
+        );
+
+        if (messagesToSummarize.length === 0) {
+            this.logger.debug('No messages to summarize after preserving system message');
+            return this.conversationSummary;
+        }
+
+        // Build the summarization prompt (excluding previous summary messages to avoid duplication)
+        const conversationText = messagesToSummarize
+            .filter(m => !(m.role === 'system' && m.content.startsWith('[Previous conversation summary:')))
+            .map(m => `${m.role.toUpperCase()}: ${m.content}`)
+            .join('\n\n');
+
+        const existingSummaryContext = this.conversationSummary
+            ? `Previous conversation summary:\n${this.conversationSummary}\n\n`
+            : '';
+
+        const summarizationPrompt = dedent`
+            ${existingSummaryContext}Summarize the following conversation, preserving:
+            - Key topics discussed
+            - Important decisions or conclusions
+            - Any commitments or action items
+            - Relevant context for continuing the conversation
+
+            Be concise but comprehensive. The summary will be used to maintain context in future turns.
+
+            CONVERSATION:
+            ${conversationText}
+
+            SUMMARY:
+        `;
+
+        try {
+            const model = this.summarizationModel || this.getModelForPurpose('summarization');
+
+            const response = await withRetry(
+                () => this.client.responses.create({
+                    model,
+                    input: [
+                        this.buildMessage('system', 'You are a helpful assistant that creates concise conversation summaries.'),
+                        this.buildMessage('user', summarizationPrompt)
+                    ],
+                    ...(this.llmConfig.temperature !== undefined ? { temperature: this.llmConfig.temperature } : {})
+                }),
+                this.logger,
+                `summarization (${this.name})`
+            );
+
+            const summary = this.extractTextFromResponse(response);
+
+            if (summary) {
+                this.conversationSummary = summary;
+
+                // Rebuild history: keep system message (if any) + keep recent messages
+                const newHistory: ConversationMessage[] = [];
+
+                if (hasSystemFirst) {
+                    newHistory.push(this.conversationHistory[0]);
+                }
+
+                // Add a system message with the summary context
+                newHistory.push({
+                    role: 'system',
+                    content: `[Previous conversation summary: ${summary}]`
+                });
+
+                // Filter out any previous summary system messages from messagesToKeep
+                // to avoid stacking multiple summaries over time
+                const filteredMessagesToKeep = messagesToKeep.filter(
+                    m => !(m.role === 'system' && m.content.startsWith('[Previous conversation summary:'))
+                );
+
+                // Add the recent messages we kept (excluding previous summaries)
+                newHistory.push(...filteredMessagesToKeep);
+
+                const previousLength = this.conversationHistory.length;
+                this.conversationHistory = newHistory;
+
+                this.emit(AgentEvent.HISTORY_SUMMARIZED, {
+                    agent: this.name,
+                    previousLength,
+                    newLength: this.conversationHistory.length,
+                    summarizedCount: messagesToSummarize.length,
+                    summaryLength: summary.length,
+                    timestamp: Date.now()
+                });
+
+                this.logger.info(
+                    `Summarized ${messagesToSummarize.length} messages into ${summary.length} chars, ` +
+                    `history reduced from ${previousLength} to ${this.conversationHistory.length} messages`
+                );
+            }
+
+            return summary;
+        } catch (error) {
+            this.logger.error('Error during summarization:', error);
+            // Fall back to simple trimming if summarization fails
+            this.conversationHistory = [
+                ...(hasSystemFirst ? [this.conversationHistory[0]] : []),
+                ...messagesToKeep
+            ];
+            return this.conversationSummary;
+        }
+    }
+
+    /**
+     * Get the current conversation summary (if any exists from previous summarizations)
+     */
+    getConversationSummary(): string {
+        return this.conversationSummary;
+    }
+
+    /**
+     * Set the conversation summary (useful for restoring state)
+     */
+    setConversationSummary(summary: string): void {
+        this.conversationSummary = summary;
+    }
+
+    /**
+     * Check if summarization is enabled for this agent
+     */
+    isSummarizationEnabled(): boolean {
+        return this.enableSummarization;
+    }
+
+    /**
      * Chat with the agent using auto-managed conversation history.
      * This is the recommended method for multi-turn conversations.
      *
@@ -290,7 +484,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      */
     async chat(message: string, context: string = ''): Promise<string> {
         // Add user message to history
-        this.addToHistory({ role: 'user', content: message });
+        await this.addToHistory({ role: 'user', content: message });
 
         // Perform task with full history
         const response = await this.performTask(
@@ -300,7 +494,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         );
 
         // Add assistant response to history
-        this.addToHistory({ role: 'assistant', content: response });
+        await this.addToHistory({ role: 'assistant', content: response });
 
         return response;
     }
@@ -346,7 +540,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         onChunk?: (chunk: StreamChunk) => void
     ): AsyncGenerator<StreamChunk, string, unknown> {
         // Add user message to history
-        this.addToHistory({ role: 'user', content: message });
+        await this.addToHistory({ role: 'user', content: message });
 
         let fullResponse = '';
 
@@ -369,7 +563,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         }
 
         // Add assistant response to history
-        this.addToHistory({ role: 'assistant', content: fullResponse });
+        await this.addToHistory({ role: 'assistant', content: fullResponse });
 
         return fullResponse;
     }
@@ -422,7 +616,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         try {
             // Stream the response
-            const { text, toolCalls } = yield* this.streamResponse(conversation);
+            const { text, toolCalls, responseId } = yield* this.streamResponse(conversation);
             fullText = text;
 
             // If we have tool calls, execute them and get a follow-up response
@@ -475,7 +669,8 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 }
 
                 // Get synthesis response (non-streaming for tool follow-up to avoid complexity)
-                const synthesisResponse = await this.createResponse(conversation, false);
+                // Use previous_response_id to maintain structured tool-call context
+                const synthesisResponse = await this.createResponse(conversation, false, responseId);
                 const synthesisText = this.extractTextFromResponse(synthesisResponse);
 
                 // Yield the synthesis as a final chunk
@@ -548,7 +743,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      */
     private async *streamResponse(
         conversation: ResponseInputItem[]
-    ): AsyncGenerator<StreamChunk, { text: string; toolCalls: Array<{ call_id: string; name: string; arguments: string }> }, unknown> {
+    ): AsyncGenerator<StreamChunk, { text: string; toolCalls: Array<{ call_id: string; name: string; arguments: string }>; responseId?: string }, unknown> {
         const request: Record<string, any> = {
             model: this.getModelForPurpose('task_execution'),
             input: conversation,
@@ -573,11 +768,12 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         const stream = await this.client.responses.create(request);
 
         let fullText = '';
+        let responseId: string | undefined;
         const toolCalls: Array<{ call_id: string; name: string; arguments: string }> = [];
         const pendingToolCalls: Map<string, { name: string; arguments: string }> = new Map();
 
         // Handle the stream
-        for await (const event of stream as AsyncIterable<any>) {
+        for await (const event of stream as unknown as AsyncIterable<any>) {
             // Handle different event types from the streaming API
             if (event.type === 'response.output_text.delta') {
                 const delta = event.delta || '';
@@ -626,7 +822,10 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     pendingToolCalls.delete(callId);
                 }
             } else if (event.type === 'response.completed' || event.type === 'response.done') {
-                // Stream completed - extract any remaining tool calls from the final response
+                // Stream completed - capture response ID and extract any remaining tool calls
+                if (event.response?.id) {
+                    responseId = event.response.id;
+                }
                 if (event.response?.output) {
                     for (const item of event.response.output) {
                         if (item.type === 'function_call' && !toolCalls.find(tc => tc.call_id === item.call_id)) {
@@ -641,7 +840,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             }
         }
 
-        return { text: fullText, toolCalls };
+        return { text: fullText, toolCalls, responseId };
     }
 
     /**
@@ -649,12 +848,14 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      */
     exportConversationState(): {
         history: ConversationMessage[];
+        summary: string;
         agentId: string;
         agentName: string;
         timestamp: number;
     } {
         return {
             history: this.getHistory(),
+            summary: this.conversationSummary,
             agentId: this.id,
             agentName: this.name,
             timestamp: Date.now()
@@ -1038,12 +1239,18 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
     private async createResponse(
         conversation: ResponseInputItem[],
-        allowTools: boolean
+        allowTools: boolean,
+        previousResponseId?: string
     ): Promise<Response> {
         const request: Record<string, any> = {
             model: this.getModelForPurpose('task_execution'),
             input: conversation
         };
+
+        // Use previous_response_id for tool synthesis to maintain structured context
+        if (previousResponseId) {
+            request.previous_response_id = previousResponseId;
+        }
 
         if (this.llmConfig.temperature !== undefined) {
             request.temperature = this.llmConfig.temperature;

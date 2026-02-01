@@ -414,6 +414,71 @@ console.log(`Items: ${stats.itemCount}, Tokens: ${stats.totalTokens}`);
 
 See `examples/PersistentMemory.ts` for a complete example.
 
+### Conversation Summarization
+
+For long-running conversations, agents can automatically summarize older messages to reduce context size while preserving key information. This is especially useful when working within token limits.
+
+#### Enabling Summarization
+
+```typescript
+const agent = new Agent({
+    name: 'Assistant',
+    goal: 'Help with complex tasks',
+    maxHistoryMessages: 100,
+    enableSummarization: true,        // Enable automatic summarization
+    summarizationThreshold: 3000,     // Trigger when ~3000 tokens estimated
+    summarizationModel: 'gpt-4o-mini' // Use a fast model for summaries
+}, client);
+```
+
+#### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enableSummarization` | boolean | false | Enable automatic summarization |
+| `summarizationThreshold` | number | 3000 | Estimated token count to trigger summarization |
+| `summarizationModel` | string | (agent's model) | Model used for generating summaries |
+
+#### How It Works
+
+When enabled, the agent:
+1. Estimates token count after each conversation turn
+2. If tokens exceed the threshold, triggers summarization
+3. Compresses old messages into a concise summary
+4. Keeps the most recent 10 messages intact
+5. Injects the summary as context for future turns
+6. Emits a `HISTORY_SUMMARIZED` event
+
+#### Manual Summarization
+
+```typescript
+// Manually trigger summarization
+const summary = await agent.summarizeHistory();
+
+// Keep more recent messages (default: 10)
+const summary = await agent.summarizeHistory(20);
+
+// Get the current summary
+const existingSummary = agent.getConversationSummary();
+
+// Check estimated token count
+const tokens = agent.estimateHistoryTokens();
+```
+
+#### Events
+
+```typescript
+import { AgentEvent } from 'tiny-crew';
+
+agent.on(AgentEvent.HISTORY_SUMMARIZED, (data) => {
+    console.log(`Summarized ${data.summarizedCount} messages`);
+    console.log(`History: ${data.previousLength} → ${data.newLength} messages`);
+    console.log(`Summary length: ${data.summaryLength} chars`);
+});
+```
+
+See the [detailed documentation](./docs/conversation-history.md#conversation-summarization) for more examples.
+
 ### Multi-Model Routing
 
 TinyCrew supports routing different LLM operations to different models based on their purpose. This enables cost optimization by using cheaper/faster models for routine tasks while reserving more capable models for complex reasoning.
@@ -684,6 +749,44 @@ export class CustomTool implements Tool {
   }
 }
 ```
+
+### Memory Tools for Agents
+
+TinyCrew includes pre-built memory tools that allow agents to manage their own persistent memory. These tools are inspired by Letta's (MemGPT) memory architecture.
+
+```typescript
+import { Agent } from 'tiny-crew';
+import { PersonaMemory } from 'tiny-crew/core/PersonaMemory';
+import { createMemoryTools } from 'tiny-crew/tools/MemoryTools';
+
+// Create memory instance
+const memory = new PersonaMemory({ personaId: 'assistant-001' });
+
+// Create memory tools with optional access control
+const tools = createMemoryTools(memory, {
+    allowedBlocks: ['user_info', 'preferences'],  // Restrict which blocks can be modified
+    includeViewTool: true,                         // Include CoreMemoryView tool
+    includeArchivalTools: true                     // Include archival memory tools
+});
+
+// Create agent with memory capabilities
+const agent = new Agent({
+    name: 'MemoryBot',
+    goal: 'Remember and recall user information'
+}, client, tools);
+```
+
+#### Available Memory Tools
+
+| Tool | Description |
+|------|-------------|
+| `CoreMemoryAppend` | Append content to a memory block |
+| `CoreMemoryReplace` | Replace specific content in a memory block |
+| `CoreMemoryView` | View current memory block contents |
+| `ArchivalMemoryInsert` | Store content in long-term archival memory |
+| `ArchivalMemorySearch` | Search archival memory for relevant information |
+
+See the [Memory Tools documentation](./docs/memory-tools.md) for detailed usage.
 
 ### Creating a Plugin System
 

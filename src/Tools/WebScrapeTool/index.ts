@@ -173,7 +173,7 @@ interface WebScrapeArgs {
 
         // Extract meta tags
         const metaTags = document.querySelectorAll('meta');
-        metaTags.forEach(meta => {
+        metaTags.forEach((meta: Element) => {
             const name = meta.getAttribute('name') || meta.getAttribute('property');
             const content = meta.getAttribute('content');
             if (name && content) {
@@ -345,9 +345,9 @@ interface WebScrapeArgs {
                     const selectedElements = document.querySelectorAll(selector);
 
                     if (type === 'text') {
-                        return Array.from(selectedElements).map(el => el.textContent?.trim()).filter(Boolean);
+                        return Array.from(selectedElements).map((el: Element) => el.textContent?.trim()).filter(Boolean);
                     } else if (type === 'html') {
-                        return Array.from(selectedElements).map(el => el.outerHTML).filter(Boolean);
+                        return Array.from(selectedElements).map((el: Element) => (el as HTMLElement).outerHTML).filter(Boolean);
                     }
                 } else {
                     if (type === 'text') {

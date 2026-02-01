@@ -74,6 +74,23 @@ export interface AgentConfig {
      * Default: true
      */
     autoManageHistory?: boolean;
+    /**
+     * Whether to enable automatic summarization of conversation history.
+     * When enabled, old messages are summarized instead of being truncated.
+     * Default: false
+     */
+    enableSummarization?: boolean;
+    /**
+     * Estimated token threshold that triggers automatic summarization.
+     * When history exceeds this threshold, older messages are summarized.
+     * Default: 3000
+     */
+    summarizationThreshold?: number;
+    /**
+     * Optional model to use for summarization (defaults to agent's model).
+     * Can use a faster/cheaper model for summarization tasks.
+     */
+    summarizationModel?: string;
 }
 
 // Tool-related interfaces
@@ -97,6 +114,7 @@ export interface ToolSchema {
             [key: string]: ToolParameter;
         };
         required: string[];
+        additionalProperties?: boolean;
     };
 }
 
@@ -175,6 +193,7 @@ export enum AgentEvent {
     MESSAGE_ADDED = 'message_added',
     HISTORY_CLEARED = 'history_cleared',
     HISTORY_TRIMMED = 'history_trimmed',
+    HISTORY_SUMMARIZED = 'history_summarized',
     STREAM_CHUNK = 'stream_chunk',
     STREAM_END = 'stream_end',
     // Agent-to-agent messaging events

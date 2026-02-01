@@ -2,7 +2,7 @@
  * Tests for Agent conversation history management
  */
 
-import { beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { Agent } from '@/Agent';
 import { AgentEvent, type ConversationMessage } from '@/utils/types';
 

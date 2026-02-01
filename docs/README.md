@@ -10,6 +10,7 @@ Maintain context across multi-turn conversations with automatic history manageme
 
 - `chat()` method for easy conversations
 - Configurable history limits
+- **Automatic summarization** of old messages
 - History persistence and restoration
 - Events for monitoring changes
 
@@ -31,6 +32,15 @@ Enable agents to communicate and collaborate.
 - Message queuing for offline agents
 - Broadcast and multi-cast support
 
+### [Memory Tools](./memory-tools.md)
+
+Allow agents to manage their own persistent memory.
+
+- Core memory append and replace operations
+- Long-term archival memory storage
+- Semantic search for stored information
+- Access control for memory blocks
+
 ## Quick Reference
 
 ### Agent Methods
@@ -43,6 +53,9 @@ Enable agents to communicate and collaborate.
 | `performTaskStream(description, context?, history?)` | Stream a task response |
 | `getHistory()` | Get conversation history |
 | `clearHistory()` | Clear conversation history |
+| `summarizeHistory(keepRecentCount?)` | Summarize old messages to reduce context |
+| `getConversationSummary()` | Get the current conversation summary |
+| `estimateHistoryTokens()` | Estimate token count of history |
 | `connectToMessageBus(bus)` | Connect to message bus |
 | `sendMessage(to, content, options?)` | Send message to another agent |
 | `onMessage(handler)` | Register message handler |
@@ -58,6 +71,7 @@ Enable agents to communicate and collaborate.
 | `MESSAGE_ADDED` | Message added to history |
 | `HISTORY_CLEARED` | History was cleared |
 | `HISTORY_TRIMMED` | History was trimmed |
+| `HISTORY_SUMMARIZED` | History was summarized |
 | `STREAM_CHUNK` | Streaming chunk received |
 | `STREAM_END` | Streaming completed |
 | `MESSAGE_SENT` | Agent message sent |
@@ -67,16 +81,19 @@ Enable agents to communicate and collaborate.
 
 ```typescript
 interface AgentConfig {
-    name: string;                  // Agent name
-    goal: string;                  // Agent's purpose
-    model?: string;                // LLM model (default: gpt-4o-mini)
-    temperature?: number;          // Response randomness
-    maxTokens?: number;            // Max response tokens
-    maxHistoryMessages?: number;   // History limit (default: 50)
-    autoManageHistory?: boolean;   // Auto-manage in chat() (default: true)
-    systemPrompt?: string;         // Custom system prompt
-    capabilities?: string[];       // Agent capabilities
-    preferredModel?: string;       // Override model for this agent
+    name: string;                    // Agent name
+    goal: string;                    // Agent's purpose
+    model?: string;                  // LLM model (default: gpt-4o-mini)
+    temperature?: number;            // Response randomness
+    maxTokens?: number;              // Max response tokens
+    maxHistoryMessages?: number;     // History limit (default: 50)
+    autoManageHistory?: boolean;     // Auto-manage in chat() (default: true)
+    enableSummarization?: boolean;   // Enable auto-summarization (default: false)
+    summarizationThreshold?: number; // Token threshold for summarization (default: 3000)
+    summarizationModel?: string;     // Model for summarization tasks
+    systemPrompt?: string;           // Custom system prompt
+    capabilities?: string[];         // Agent capabilities
+    preferredModel?: string;         // Override model for this agent
 }
 ```
 
@@ -143,6 +160,7 @@ Test files:
 - `tests/agent-conversation.test.ts` - Conversation history tests
 - `tests/agent-streaming.test.ts` - Streaming tests
 - `tests/agent-messaging.test.ts` - Messaging tests
+- `tests/agent-summarization.test.ts` - Summarization tests
 
 ## Contributing
 
