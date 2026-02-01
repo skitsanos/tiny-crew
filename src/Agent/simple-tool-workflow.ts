@@ -38,8 +38,8 @@ export class SimpleToolWorkflow {
             () => this.client.responses.create({
                 model: this.getModelForPurpose('task_execution'),
                 input: conversation,
-                temperature: this.llmConfig.temperature,
-                ...(this.llmConfig.maxTokens ? { max_output_tokens: this.llmConfig.maxTokens } : {}),
+                ...(this.llmConfig.temperature !== undefined ? { temperature: this.llmConfig.temperature } : {}),
+                ...(this.llmConfig.maxTokens !== undefined ? { max_output_tokens: this.llmConfig.maxTokens } : {}),
                 tools: this.tools.size > 0 ? this.buildToolDefinitions() : undefined,
                 tool_choice: this.tools.size > 0 ? 'auto' : undefined
             }),
@@ -101,8 +101,8 @@ export class SimpleToolWorkflow {
                 model: this.getModelForPurpose('tool_synthesis'),
                 previous_response_id: initialResponse.id,  // Preserves structured tool-call context
                 input: toolOutputs,                         // Only the function_call_output items
-                temperature: this.llmConfig.temperature,
-                ...(this.llmConfig.maxTokens ? { max_output_tokens: this.llmConfig.maxTokens } : {})
+                ...(this.llmConfig.temperature !== undefined ? { temperature: this.llmConfig.temperature } : {}),
+                ...(this.llmConfig.maxTokens !== undefined ? { max_output_tokens: this.llmConfig.maxTokens } : {})
             }),
             this.logger,
             'simple-workflow:follow-up'

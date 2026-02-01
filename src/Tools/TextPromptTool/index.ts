@@ -48,8 +48,8 @@ export class TextPromptTool implements Tool {
         this.promptTemplate = config.promptTemplate;
         this.systemPrompt = config.systemPrompt || 'You are a helpful assistant that processes text according to instructions.';
         this.model = config.model || process.env.DEFAULT_MODEL || 'gpt-4o';
-        this.temperature = config.temperature || 0.3;
-        this.maxTokens = config.maxTokens || 1024;
+        this.temperature = config.temperature;  // undefined if not set
+        this.maxTokens = config.maxTokens;      // undefined if not set
         this.purpose = config.purpose || 'summarization';
         this.modelRouter = config.modelRouter;
         this.client = client;
@@ -165,8 +165,8 @@ export class TextPromptTool implements Tool {
                         { role: 'system', content: this.systemPrompt },
                         { role: 'user', content: populatedPrompt }
                     ],
-                    temperature: this.temperature,
-                    ...(this.maxTokens ? { max_output_tokens: this.maxTokens } : {})
+                    ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
+                    ...(this.maxTokens !== undefined ? { max_output_tokens: this.maxTokens } : {})
                 }),
                 this.logger,
                 `text_prompt_tool:${this.name}`

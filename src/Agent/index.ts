@@ -74,8 +74,8 @@ export class Agent extends EventEmitter {
         this.responseSchema = config.responseSchema;
         this.llmConfig = {
             model: config.model || process.env.DEFAULT_MODEL || 'gpt-4o-mini',
-            temperature: config.temperature || 0.7,
-            maxTokens: config.maxTokens || 1024
+            temperature: config.temperature,  // undefined if not set - let model use its default
+            maxTokens: config.maxTokens       // undefined if not set - let model use its default
         };
         this.client = client;
         this.tools = new Map(tools.map(tool => [tool.name, tool]));
@@ -552,11 +552,14 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         const request: Record<string, any> = {
             model: this.getModelForPurpose('task_execution'),
             input: conversation,
-            temperature: this.llmConfig.temperature,
             stream: true
         };
 
-        if (this.llmConfig.maxTokens) {
+        if (this.llmConfig.temperature !== undefined) {
+            request.temperature = this.llmConfig.temperature;
+        }
+
+        if (this.llmConfig.maxTokens !== undefined) {
             request.max_output_tokens = this.llmConfig.maxTokens;
         }
 
@@ -1039,11 +1042,14 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     ): Promise<Response> {
         const request: Record<string, any> = {
             model: this.getModelForPurpose('task_execution'),
-            input: conversation,
-            temperature: this.llmConfig.temperature
+            input: conversation
         };
 
-        if (this.llmConfig.maxTokens) {
+        if (this.llmConfig.temperature !== undefined) {
+            request.temperature = this.llmConfig.temperature;
+        }
+
+        if (this.llmConfig.maxTokens !== undefined) {
             request.max_output_tokens = this.llmConfig.maxTokens;
         }
 
@@ -1158,8 +1164,8 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 model: this.getModelForPurpose('tool_synthesis'),
                 previous_response_id: response.id,  // Preserves structured tool-call context
                 input: toolOutputs,                  // Only the function_call_output items
-                temperature: this.llmConfig.temperature,
-                ...(this.llmConfig.maxTokens ? { max_output_tokens: this.llmConfig.maxTokens } : {})
+                ...(this.llmConfig.temperature !== undefined ? { temperature: this.llmConfig.temperature } : {}),
+                ...(this.llmConfig.maxTokens !== undefined ? { max_output_tokens: this.llmConfig.maxTokens } : {})
             }),
             this.logger,
             `responses.create follow-up (${this.name})`
