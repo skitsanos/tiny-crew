@@ -34,7 +34,7 @@ describe('Agent Conversation History', () => {
             {
                 name: 'TestAgent',
                 goal: 'Help with testing',
-                model: 'gpt-4o-mini',
+                model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
                 maxHistoryMessages: 10
             },
             mockClient

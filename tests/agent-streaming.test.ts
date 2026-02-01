@@ -60,7 +60,7 @@ describe('Agent Streaming', () => {
                 {
                     name: 'StreamAgent',
                     goal: 'Test streaming',
-                    model: 'gpt-4o-mini'
+                    model: process.env.DEFAULT_MODEL || 'gpt-4o-mini'
                 },
                 mockStreamClient
             );

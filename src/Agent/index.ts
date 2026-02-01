@@ -73,7 +73,7 @@ export class Agent extends EventEmitter {
         this.preferredModel = config.preferredModel;
         this.responseSchema = config.responseSchema;
         this.llmConfig = {
-            model: config.model || 'gpt-4o-mini',
+            model: config.model || process.env.DEFAULT_MODEL || 'gpt-4o-mini',
             temperature: config.temperature || 0.7,
             maxTokens: config.maxTokens || 1024
         };

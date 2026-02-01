@@ -47,7 +47,7 @@ export class TextPromptTool implements Tool {
         this.description = config.description;
         this.promptTemplate = config.promptTemplate;
         this.systemPrompt = config.systemPrompt || 'You are a helpful assistant that processes text according to instructions.';
-        this.model = config.model || 'gpt-4o';
+        this.model = config.model || process.env.DEFAULT_MODEL || 'gpt-4o';
         this.temperature = config.temperature || 0.3;
         this.maxTokens = config.maxTokens || 1024;
         this.purpose = config.purpose || 'summarization';
