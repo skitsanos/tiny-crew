@@ -23,19 +23,20 @@ const defaultShouldRetry = (error: unknown): boolean => {
     return true;
 };
 
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function withRetry<T>(
     operation: () => Promise<T>,
     logger?: Logger,
     description: string = 'operation',
-    options: RetryOptions = {}
+    options: RetryOptions = {},
 ): Promise<T> {
     const {
         maxAttempts = 3,
         initialDelayMs = 500,
         backoffFactor = 2,
-        shouldRetry = defaultShouldRetry
+        shouldRetry = defaultShouldRetry,
     } = options;
 
     let attempt = 0;
@@ -58,7 +59,7 @@ export async function withRetry<T>(
                 attempt,
                 maxAttempts,
                 nextDelayMs: delay,
-                error: error instanceof Error ? error.message : String(error)
+                error: error instanceof Error ? error.message : String(error),
             });
 
             await sleep(delay);
@@ -66,5 +67,8 @@ export async function withRetry<T>(
         }
     }
 
-    throw lastError ?? new Error(`${description} failed after ${maxAttempts} attempts`);
+    throw (
+        lastError ??
+        new Error(`${description} failed after ${maxAttempts} attempts`)
+    );
 }

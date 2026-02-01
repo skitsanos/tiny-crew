@@ -19,11 +19,11 @@ class DatabaseQueryTool implements Tool {
             properties: {
                 query: {
                     type: 'string',
-                    description: 'The SQL query to execute on the database'
-                }
+                    description: 'The SQL query to execute on the database',
+                },
             },
-            required: ['query']
-        }
+            required: ['query'],
+        },
     };
 
     constructor(db: Database) {

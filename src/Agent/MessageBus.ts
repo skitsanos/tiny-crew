@@ -5,15 +5,15 @@
  * with each other asynchronously.
  */
 
-import { randomUUID } from 'crypto';
-import EventEmitter from 'events';
+import { randomUUID } from 'node:crypto';
+import EventEmitter from 'node:events';
+import Logger from '@/utils/logger';
 import type {
     AgentMessage,
     AgentMessageType,
     MessageHandler,
-    MessageHandlerContext
+    MessageHandlerContext,
 } from '@/utils/types';
-import Logger from '@/utils/logger';
 
 /**
  * Events emitted by the MessageBus
@@ -24,7 +24,7 @@ export enum MessageBusEvent {
     MESSAGE_DELIVERED = 'message_delivered',
     MESSAGE_FAILED = 'message_failed',
     AGENT_REGISTERED = 'agent_registered',
-    AGENT_UNREGISTERED = 'agent_unregistered'
+    AGENT_UNREGISTERED = 'agent_unregistered',
 }
 
 /**
@@ -62,11 +62,14 @@ export class MessageBus extends EventEmitter {
     private readonly logger: Logger;
     private readonly handlers: Map<string, MessageHandler[]>;
     private readonly messageQueue: Map<string, AgentMessage[]>;
-    private readonly pendingReplies: Map<string, {
-        resolve: (message: AgentMessage) => void;
-        reject: (error: Error) => void;
-        timeout: ReturnType<typeof setTimeout>;
-    }>;
+    private readonly pendingReplies: Map<
+        string,
+        {
+            resolve: (message: AgentMessage) => void;
+            reject: (error: Error) => void;
+            timeout: ReturnType<typeof setTimeout>;
+        }
+    >;
 
     constructor() {
         super();
@@ -90,7 +93,7 @@ export class MessageBus extends EventEmitter {
 
         this.emit(MessageBusEvent.AGENT_REGISTERED, {
             agent: agentName,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
         this.logger.info(`Agent registered: ${agentName}`);
     }
@@ -102,7 +105,7 @@ export class MessageBus extends EventEmitter {
         this.handlers.delete(agentName);
         this.emit(MessageBusEvent.AGENT_UNREGISTERED, {
             agent: agentName,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
         this.logger.info(`Agent unregistered: ${agentName}`);
     }
@@ -128,7 +131,7 @@ export class MessageBus extends EventEmitter {
         from: string,
         to: string | string[],
         content: string,
-        options: SendMessageOptions = {}
+        options: SendMessageOptions = {},
     ): AgentMessage {
         const message: AgentMessage = {
             id: randomUUID(),
@@ -139,12 +142,12 @@ export class MessageBus extends EventEmitter {
             metadata: options.metadata,
             timestamp: Date.now(),
             replyTo: options.replyTo,
-            priority: options.priority || 'normal'
+            priority: options.priority || 'normal',
         };
 
         this.emit(MessageBusEvent.MESSAGE_SENT, {
             message,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
 
         // Handle multiple recipients
@@ -165,7 +168,7 @@ export class MessageBus extends EventEmitter {
         to: string,
         content: string,
         options: SendMessageOptions = {},
-        timeoutMs: number = 30000
+        timeoutMs: number = 30000,
     ): Promise<AgentMessage> {
         // Ensure the sender is registered to receive the reply
         const wasRegistered = this.handlers.has(from);
@@ -184,7 +187,7 @@ export class MessageBus extends EventEmitter {
             metadata: options.metadata,
             timestamp: Date.now(),
             replyTo: options.replyTo,
-            priority: options.priority || 'normal'
+            priority: options.priority || 'normal',
         };
 
         return new Promise((resolve, reject) => {
@@ -207,12 +210,16 @@ export class MessageBus extends EventEmitter {
             };
 
             // Set up the pending reply BEFORE sending the message
-            this.pendingReplies.set(message.id, { resolve: wrappedResolve, reject, timeout });
+            this.pendingReplies.set(message.id, {
+                resolve: wrappedResolve,
+                reject,
+                timeout,
+            });
 
             // Now send the message
             this.emit(MessageBusEvent.MESSAGE_SENT, {
                 message,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
 
             // Deliver to recipients
@@ -229,19 +236,24 @@ export class MessageBus extends EventEmitter {
     broadcast(
         from: string,
         content: string,
-        options: Omit<SendMessageOptions, 'type'> = {}
+        options: Omit<SendMessageOptions, 'type'> = {},
     ): AgentMessage {
-        const recipients = this.getRegisteredAgents().filter(agent => agent !== from);
+        const recipients = this.getRegisteredAgents().filter(
+            (agent) => agent !== from,
+        );
         return this.send(from, recipients, content, {
             ...options,
-            type: 'broadcast'
+            type: 'broadcast',
         });
     }
 
     /**
      * Internal: Deliver a message to a specific recipient
      */
-    private async deliverMessage(message: AgentMessage, recipient: string): Promise<void> {
+    private async deliverMessage(
+        message: AgentMessage,
+        recipient: string,
+    ): Promise<void> {
         const handlers = this.handlers.get(recipient);
 
         // Only queue if agent is not registered (handlers is undefined)
@@ -259,7 +271,7 @@ export class MessageBus extends EventEmitter {
         this.emit(MessageBusEvent.MESSAGE_RECEIVED, {
             recipient,
             message,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
 
         // Check if this message is a reply to a pending request
@@ -277,13 +289,13 @@ export class MessageBus extends EventEmitter {
             this.send(recipient, message.from, content, {
                 type: 'response',
                 replyTo: message.id,
-                metadata
+                metadata,
             });
         };
 
         const context: MessageHandlerContext = {
             message,
-            reply
+            reply,
         };
 
         // Call all handlers for this agent
@@ -294,15 +306,18 @@ export class MessageBus extends EventEmitter {
             this.emit(MessageBusEvent.MESSAGE_DELIVERED, {
                 recipient,
                 messageId: message.id,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
         } catch (error) {
-            this.logger.error(`Error delivering message to ${recipient}:`, error);
+            this.logger.error(
+                `Error delivering message to ${recipient}:`,
+                error,
+            );
             this.emit(MessageBusEvent.MESSAGE_FAILED, {
                 recipient,
                 messageId: message.id,
                 error,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
         }
     }
@@ -314,7 +329,9 @@ export class MessageBus extends EventEmitter {
         const queued = this.messageQueue.get(agentName);
         if (!queued || queued.length === 0) return;
 
-        this.logger.info(`Processing ${queued.length} queued messages for ${agentName}`);
+        this.logger.info(
+            `Processing ${queued.length} queued messages for ${agentName}`,
+        );
 
         // Clear queue first to avoid re-processing
         this.messageQueue.set(agentName, []);

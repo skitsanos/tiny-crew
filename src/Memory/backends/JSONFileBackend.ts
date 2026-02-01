@@ -3,8 +3,15 @@
  * Persists memory to JSON files with atomic writes
  */
 
-import { mkdir, readFile, writeFile, rename, unlink, access } from 'fs/promises';
-import { join, dirname } from 'path';
+import {
+    access,
+    mkdir,
+    readFile,
+    rename,
+    unlink,
+    writeFile,
+} from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { MemoryBackend, MemoryItem, MemoryQuery } from '../types';
 import { scoreItemByKeywords } from '../types';
 
@@ -66,7 +73,9 @@ export class JSONFileBackend implements MemoryBackend {
 
             // Validate version
             if (data.version !== CURRENT_VERSION) {
-                console.warn(`Memory file version mismatch: expected ${CURRENT_VERSION}, got ${data.version}`);
+                console.warn(
+                    `Memory file version mismatch: expected ${CURRENT_VERSION}, got ${data.version}`,
+                );
                 // Future: implement migration logic here
             }
 
@@ -78,7 +87,6 @@ export class JSONFileBackend implements MemoryBackend {
 
             this.cache.set(crewId, memory);
             return memory;
-
         } catch (error: any) {
             if (error.code === 'ENOENT') {
                 // File doesn't exist, return empty map
@@ -108,7 +116,7 @@ export class JSONFileBackend implements MemoryBackend {
             version: CURRENT_VERSION,
             crewId,
             updatedAt: Date.now(),
-            items
+            items,
         };
 
         const content = this.prettyPrint
@@ -171,7 +179,11 @@ export class JSONFileBackend implements MemoryBackend {
 
         for (const item of memory.values()) {
             // Skip expired items unless explicitly requested
-            if (!filter.includeExpired && item.expiresAt && item.expiresAt < now) {
+            if (
+                !filter.includeExpired &&
+                item.expiresAt &&
+                item.expiresAt < now
+            ) {
                 continue;
             }
 
@@ -184,7 +196,11 @@ export class JSONFileBackend implements MemoryBackend {
         }
 
         // Sort results (pass relevanceKeywords for keyword-aware sorting)
-        results = this.sortResults(results, filter.sortBy ?? 'recency', filter.relevanceKeywords);
+        results = this.sortResults(
+            results,
+            filter.sortBy ?? 'recency',
+            filter.relevanceKeywords,
+        );
 
         // Limit results
         if (filter.maxItems && results.length > filter.maxItems) {
@@ -282,8 +298,8 @@ export class JSONFileBackend implements MemoryBackend {
 
         // Filter by tags (any match)
         if (filter.tags && filter.tags.length > 0) {
-            const hasMatchingTag = filter.tags.some(tag =>
-                item.tags.includes(tag)
+            const hasMatchingTag = filter.tags.some((tag) =>
+                item.tags.includes(tag),
             );
             if (!hasMatchingTag) {
                 return false;
@@ -293,8 +309,8 @@ export class JSONFileBackend implements MemoryBackend {
         // Filter by keywords (any match in task or result)
         if (filter.keywords && filter.keywords.length > 0) {
             const searchText = `${item.task} ${item.result}`.toLowerCase();
-            const hasMatchingKeyword = filter.keywords.some(keyword =>
-                searchText.includes(keyword.toLowerCase())
+            const hasMatchingKeyword = filter.keywords.some((keyword) =>
+                searchText.includes(keyword.toLowerCase()),
             );
             if (!hasMatchingKeyword) {
                 return false;
@@ -313,7 +329,7 @@ export class JSONFileBackend implements MemoryBackend {
     private sortResults(
         items: MemoryItem[],
         sortBy: 'relevance' | 'recency' | 'accessCount',
-        relevanceKeywords?: string[]
+        relevanceKeywords?: string[],
     ): MemoryItem[] {
         switch (sortBy) {
             case 'recency':
@@ -326,8 +342,12 @@ export class JSONFileBackend implements MemoryBackend {
                 // Score by keyword matches + recency + access count
                 return items.sort((a, b) => {
                     // Keyword score (if keywords provided)
-                    const keywordScoreA = relevanceKeywords ? scoreItemByKeywords(a, relevanceKeywords) : 0;
-                    const keywordScoreB = relevanceKeywords ? scoreItemByKeywords(b, relevanceKeywords) : 0;
+                    const keywordScoreA = relevanceKeywords
+                        ? scoreItemByKeywords(a, relevanceKeywords)
+                        : 0;
+                    const keywordScoreB = relevanceKeywords
+                        ? scoreItemByKeywords(b, relevanceKeywords)
+                        : 0;
 
                     // If keyword scores differ significantly, use that
                     if (Math.abs(keywordScoreA - keywordScoreB) >= 2) {
@@ -335,12 +355,12 @@ export class JSONFileBackend implements MemoryBackend {
                     }
 
                     // Otherwise fall back to recency + access count
-                    const baseScoreA = a.accessCount + (a.createdAt / 1000000000);
-                    const baseScoreB = b.accessCount + (b.createdAt / 1000000000);
+                    const baseScoreA = a.accessCount + a.createdAt / 1000000000;
+                    const baseScoreB = b.accessCount + b.createdAt / 1000000000;
 
                     // Combine: keyword score weighted heavily + base score as tie-breaker
-                    const totalA = (keywordScoreA * 1000) + baseScoreA;
-                    const totalB = (keywordScoreB * 1000) + baseScoreB;
+                    const totalA = keywordScoreA * 1000 + baseScoreA;
+                    const totalB = keywordScoreB * 1000 + baseScoreB;
                     return totalB - totalA;
                 });
 

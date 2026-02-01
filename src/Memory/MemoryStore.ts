@@ -3,18 +3,18 @@
  * Wraps a backend and provides eviction, events, and convenience methods
  */
 
-import EventEmitter from 'events';
+import EventEmitter from 'node:events';
+import type Logger from '@/utils/logger';
+import { InMemoryBackend } from './backends/InMemoryBackend';
 import type {
     MemoryBackend,
+    MemoryEventPayload,
     MemoryItem,
     MemoryQuery,
-    MemoryStoreConfig,
     MemorySetOptions,
-    MemoryEventPayload
+    MemoryStoreConfig,
 } from './types';
-import { MemoryEvent, createMemoryItem, estimateTokens } from './types';
-import { InMemoryBackend } from './backends/InMemoryBackend';
-import type Logger from '@/utils/logger';
+import { createMemoryItem, estimateTokens, MemoryEvent } from './types';
 
 const DEFAULT_CONFIG: Required<MemoryStoreConfig> = {
     defaultTtl: 0, // 0 = never expires
@@ -22,7 +22,7 @@ const DEFAULT_CONFIG: Required<MemoryStoreConfig> = {
     maxTotalTokens: 100_000,
     summarizeThreshold: 2000,
     autoEvict: true,
-    evictInterval: 60_000 // 1 minute
+    evictInterval: 60_000, // 1 minute
 };
 
 export class MemoryStore extends EventEmitter {
@@ -35,12 +35,15 @@ export class MemoryStore extends EventEmitter {
     private readonly activeCrews: Set<string> = new Set();
 
     /** Track dirty access counts (crewId -> key -> {accessCount, lastAccessedAt}) */
-    private readonly dirtyAccessCounts: Map<string, Map<string, { accessCount: number; lastAccessedAt: number }>> = new Map();
+    private readonly dirtyAccessCounts: Map<
+        string,
+        Map<string, { accessCount: number; lastAccessedAt: number }>
+    > = new Map();
 
     constructor(
         backend?: MemoryBackend,
         config?: MemoryStoreConfig,
-        logger?: Logger
+        logger?: Logger,
     ) {
         super();
         this.backend = backend ?? new InMemoryBackend();
@@ -75,7 +78,7 @@ export class MemoryStore extends EventEmitter {
             capabilitiesUsed?: string[];
             metadata?: Record<string, unknown>;
         },
-        options?: MemorySetOptions
+        options?: MemorySetOptions,
     ): Promise<MemoryItem> {
         const now = Date.now();
 
@@ -104,7 +107,7 @@ export class MemoryStore extends EventEmitter {
             updatedAt: now,
             expiresAt,
             accessCount: existing?.accessCount ?? 0,
-            lastAccessedAt: existing?.lastAccessedAt ?? now
+            lastAccessedAt: existing?.lastAccessedAt ?? now,
         });
 
         // Store the item
@@ -139,7 +142,10 @@ export class MemoryStore extends EventEmitter {
         this.activeCrews.add(crewId);
 
         // Clone the item to avoid mutating the backend's cached object
-        const item: MemoryItem = { ...backendItem, tags: [...backendItem.tags] };
+        const item: MemoryItem = {
+            ...backendItem,
+            tags: [...backendItem.tags],
+        };
 
         // Apply any pending dirty access count first
         const dirtyCount = this.getDirtyAccessCount(crewId, key);
@@ -151,7 +157,12 @@ export class MemoryStore extends EventEmitter {
         // Update access tracking in-memory only (defer persistence)
         item.accessCount++;
         item.lastAccessedAt = Date.now();
-        this.markAccessCountDirty(crewId, key, item.accessCount, item.lastAccessedAt);
+        this.markAccessCountDirty(
+            crewId,
+            key,
+            item.accessCount,
+            item.lastAccessedAt,
+        );
 
         this.emitEvent(MemoryEvent.ITEM_GET, { crewId, key, item });
 
@@ -161,18 +172,28 @@ export class MemoryStore extends EventEmitter {
     /**
      * Get dirty access count for an item
      */
-    private getDirtyAccessCount(crewId: string, key: string): { accessCount: number; lastAccessedAt: number } | null {
+    private getDirtyAccessCount(
+        crewId: string,
+        key: string,
+    ): { accessCount: number; lastAccessedAt: number } | null {
         return this.dirtyAccessCounts.get(crewId)?.get(key) ?? null;
     }
 
     /**
      * Mark access count as dirty (needs persistence)
      */
-    private markAccessCountDirty(crewId: string, key: string, accessCount: number, lastAccessedAt: number): void {
+    private markAccessCountDirty(
+        crewId: string,
+        key: string,
+        accessCount: number,
+        lastAccessedAt: number,
+    ): void {
         if (!this.dirtyAccessCounts.has(crewId)) {
             this.dirtyAccessCounts.set(crewId, new Map());
         }
-        this.dirtyAccessCounts.get(crewId)!.set(key, { accessCount, lastAccessedAt });
+        this.dirtyAccessCounts
+            .get(crewId)!
+            .set(key, { accessCount, lastAccessedAt });
     }
 
     /**
@@ -243,7 +264,10 @@ export class MemoryStore extends EventEmitter {
             this.activeCrews.add(crewId);
         }
 
-        this.emitEvent(MemoryEvent.MEMORY_LOADED, { crewId, count: memory.size });
+        this.emitEvent(MemoryEvent.MEMORY_LOADED, {
+            crewId,
+            count: memory.size,
+        });
         return memory;
     }
 
@@ -253,7 +277,10 @@ export class MemoryStore extends EventEmitter {
     async save(crewId: string): Promise<void> {
         const memory = await this.backend.load(crewId);
         await this.backend.save(crewId, memory);
-        this.emitEvent(MemoryEvent.MEMORY_SAVED, { crewId, count: memory.size });
+        this.emitEvent(MemoryEvent.MEMORY_SAVED, {
+            crewId,
+            count: memory.size,
+        });
     }
 
     /**
@@ -303,7 +330,7 @@ export class MemoryStore extends EventEmitter {
             totalTokens,
             oldestItem,
             newestItem,
-            agentCounts
+            agentCounts,
         };
     }
 
@@ -326,7 +353,7 @@ export class MemoryStore extends EventEmitter {
             filter?: MemoryQuery;
             includeTimestamps?: boolean;
             relevanceKeywords?: string[];
-        }
+        },
     ): Promise<string> {
         const maxTokens = options?.maxTokens ?? 4000;
         const maxItems = options?.maxItems ?? 20;
@@ -337,7 +364,7 @@ export class MemoryStore extends EventEmitter {
             ...options?.filter,
             maxItems,
             sortBy: 'relevance',
-            relevanceKeywords: options?.relevanceKeywords
+            relevanceKeywords: options?.relevanceKeywords,
         });
 
         if (items.length === 0) {
@@ -350,9 +377,10 @@ export class MemoryStore extends EventEmitter {
 
         for (const item of items) {
             // Use summary if available and result is large
-            const content = (item.summary && item.tokenCount > this.config.summarizeThreshold)
-                ? item.summary
-                : item.result;
+            const content =
+                item.summary && item.tokenCount > this.config.summarizeThreshold
+                    ? item.summary
+                    : item.result;
 
             // Format the entry
             let entry = `### ${item.agent}: ${item.task.slice(0, 100)}${item.task.length > 100 ? '...' : ''}\n`;
@@ -368,7 +396,7 @@ export class MemoryStore extends EventEmitter {
                 // Try truncating the content
                 const availableTokens = maxTokens - tokenCount - 100; // buffer
                 if (availableTokens > 200) {
-                    const truncatedContent = content.slice(0, availableTokens * 4) + '...';
+                    const truncatedContent = `${content.slice(0, availableTokens * 4)}...`;
                     entry = `### ${item.agent}: ${item.task.slice(0, 100)}${item.task.length > 100 ? '...' : ''}\n`;
                     if (includeTimestamps) {
                         entry += `*${new Date(item.createdAt).toISOString()}*\n`;
@@ -415,18 +443,26 @@ export class MemoryStore extends EventEmitter {
         }
 
         // If over token limit, remove oldest/least accessed items
-        if (totalTokens > this.config.maxTotalTokens || memory.size > this.config.maxItems) {
+        if (
+            totalTokens > this.config.maxTotalTokens ||
+            memory.size > this.config.maxItems
+        ) {
             // Sort by priority (lower = more likely to evict)
             items.sort((a, b) => {
                 // Prioritize keeping: recently accessed, frequently accessed, recent
-                const scoreA = a.accessCount * 1000 + (a.lastAccessedAt / 1000000);
-                const scoreB = b.accessCount * 1000 + (b.lastAccessedAt / 1000000);
+                const scoreA =
+                    a.accessCount * 1000 + a.lastAccessedAt / 1000000;
+                const scoreB =
+                    b.accessCount * 1000 + b.lastAccessedAt / 1000000;
                 return scoreA - scoreB; // Lower score = evict first
             });
 
             // Evict until under limits
             for (const item of items) {
-                if (memory.size <= this.config.maxItems && totalTokens <= this.config.maxTotalTokens) {
+                if (
+                    memory.size <= this.config.maxItems &&
+                    totalTokens <= this.config.maxTotalTokens
+                ) {
                     break;
                 }
 
@@ -441,11 +477,13 @@ export class MemoryStore extends EventEmitter {
         // Save changes
         if (toDelete.length > 0) {
             await this.backend.save(crewId, memory);
-            this.logger?.info(`Evicted ${toDelete.length} memory items`, { crewId });
+            this.logger?.info(`Evicted ${toDelete.length} memory items`, {
+                crewId,
+            });
             this.emitEvent(MemoryEvent.ITEMS_EVICTED, {
                 crewId,
                 count: toDelete.length,
-                reason: 'limits_exceeded'
+                reason: 'limits_exceeded',
             });
         }
 
@@ -460,8 +498,10 @@ export class MemoryStore extends EventEmitter {
 
         const stats = await this.getStats(crewId);
 
-        if (stats.itemCount > this.config.maxItems ||
-            stats.totalTokens > this.config.maxTotalTokens) {
+        if (
+            stats.itemCount > this.config.maxItems ||
+            stats.totalTokens > this.config.maxTotalTokens
+        ) {
             await this.evict(crewId);
         }
     }
@@ -517,10 +557,13 @@ export class MemoryStore extends EventEmitter {
     /**
      * Emit a typed memory event
      */
-    private emitEvent(event: MemoryEvent, payload: Partial<MemoryEventPayload>): void {
+    private emitEvent(
+        event: MemoryEvent,
+        payload: Partial<MemoryEventPayload>,
+    ): void {
         this.emit(event, {
             timestamp: Date.now(),
-            ...payload
+            ...payload,
         } as MemoryEventPayload);
     }
 }

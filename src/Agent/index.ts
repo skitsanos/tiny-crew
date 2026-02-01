@@ -1,7 +1,16 @@
-import EventEmitter from 'events';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
+import EventEmitter from 'node:events';
+import dedent from 'dedent';
 import type OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
+import type {
+    Response,
+    ResponseInputItem,
+    ResponseOutputMessage,
+} from 'openai/resources/responses/responses';
+import type { ModelRouter } from '@/ModelRouter';
+import Logger from '@/utils/logger.ts';
+import { withRetry } from '@/utils/retry.ts';
 import {
     type AgentConfig,
     AgentEvent,
@@ -15,18 +24,9 @@ import {
     type TaskError,
     type TaskResult,
     TaskStatus,
-    type Tool
+    type Tool,
 } from '@/utils/types.ts';
-import { MessageBus, type SendMessageOptions } from './MessageBus';
-import Logger from '@/utils/logger.ts';
-import dedent from 'dedent';
-import type {
-    Response,
-    ResponseInputItem,
-    ResponseOutputMessage
-} from 'openai/resources/responses/responses';
-import { withRetry } from '@/utils/retry.ts';
-import { ModelRouter } from '@/ModelRouter';
+import type { MessageBus, SendMessageOptions } from './MessageBus';
 
 /**
  * Enhanced Agent class with improved state management and tool handling
@@ -75,17 +75,18 @@ export class Agent extends EventEmitter {
         this.name = config.name;
         this.goal = config.goal;
         this.expectedOutput = config.expectedOutput;
-        this.systemPrompt = config.systemPrompt || this.buildDefaultSystemPrompt();
+        this.systemPrompt =
+            config.systemPrompt || this.buildDefaultSystemPrompt();
         this.capabilities = config.capabilities || [];
         this.preferredModel = config.preferredModel;
         this.responseSchema = config.responseSchema;
         this.llmConfig = {
             model: config.model || process.env.DEFAULT_MODEL || 'gpt-4o-mini',
-            temperature: config.temperature,  // undefined if not set - let model use its default
-            maxTokens: config.maxTokens       // undefined if not set - let model use its default
+            temperature: config.temperature, // undefined if not set - let model use its default
+            maxTokens: config.maxTokens, // undefined if not set - let model use its default
         };
         this.client = client;
-        this.tools = new Map(tools.map(tool => [tool.name, tool]));
+        this.tools = new Map(tools.map((tool) => [tool.name, tool]));
         this.taskHistory = new Map();
         this.logger = new Logger(`Agent-${this.name}`);
 
@@ -118,7 +119,10 @@ export class Agent extends EventEmitter {
      */
     private getModelForPurpose(purpose: ModelPurpose): string {
         // For task execution and tool synthesis, prefer the agent's preferred model if set
-        if (this.preferredModel && (purpose === 'task_execution' || purpose === 'tool_synthesis')) {
+        if (
+            this.preferredModel &&
+            (purpose === 'task_execution' || purpose === 'tool_synthesis')
+        ) {
             return this.preferredModel;
         }
 
@@ -246,9 +250,11 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         this.emit(AgentEvent.HISTORY_CLEARED, {
             agent: this.name,
             previousLength,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
-        this.logger.info(`Conversation history cleared (was ${previousLength} messages)`);
+        this.logger.info(
+            `Conversation history cleared (was ${previousLength} messages)`,
+        );
     }
 
     /**
@@ -259,7 +265,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         this.emit(AgentEvent.MESSAGE_ADDED, {
             agent: this.name,
             role: message.role,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
 
         // Trim if needed (may trigger summarization if enabled)
@@ -274,7 +280,8 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * If summarization is enabled, will summarize old messages instead of discarding.
      */
     private async trimHistory(): Promise<void> {
-        const toRemove = this.conversationHistory.length - this.maxHistoryMessages;
+        const toRemove =
+            this.conversationHistory.length - this.maxHistoryMessages;
         if (toRemove <= 0) return;
 
         // Check if we should summarize instead of just trimming
@@ -297,7 +304,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             agent: this.name,
             removedCount: toRemove,
             currentLength: this.conversationHistory.length,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
         this.logger.debug(`Trimmed ${toRemove} messages from history`);
     }
@@ -347,18 +354,26 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         const messagesToKeep = this.conversationHistory.slice(-keepRecentCount);
         const messagesToSummarize = this.conversationHistory.slice(
             startIndex,
-            this.conversationHistory.length - keepRecentCount
+            this.conversationHistory.length - keepRecentCount,
         );
 
         if (messagesToSummarize.length === 0) {
-            this.logger.debug('No messages to summarize after preserving system message');
+            this.logger.debug(
+                'No messages to summarize after preserving system message',
+            );
             return this.conversationSummary;
         }
 
         // Build the summarization prompt (excluding previous summary messages to avoid duplication)
         const conversationText = messagesToSummarize
-            .filter(m => !(m.role === 'system' && m.content.startsWith('[Previous conversation summary:')))
-            .map(m => `${m.role.toUpperCase()}: ${m.content}`)
+            .filter(
+                (m) =>
+                    !(
+                        m.role === 'system' &&
+                        m.content.startsWith('[Previous conversation summary:')
+                    ),
+            )
+            .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
             .join('\n\n');
 
         const existingSummaryContext = this.conversationSummary
@@ -381,19 +396,27 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         `;
 
         try {
-            const model = this.summarizationModel || this.getModelForPurpose('summarization');
+            const model =
+                this.summarizationModel ||
+                this.getModelForPurpose('summarization');
 
             const response = await withRetry(
-                () => this.client.responses.create({
-                    model,
-                    input: [
-                        this.buildMessage('system', 'You are a helpful assistant that creates concise conversation summaries.'),
-                        this.buildMessage('user', summarizationPrompt)
-                    ],
-                    ...(this.llmConfig.temperature !== undefined ? { temperature: this.llmConfig.temperature } : {})
-                }),
+                () =>
+                    this.client.responses.create({
+                        model,
+                        input: [
+                            this.buildMessage(
+                                'system',
+                                'You are a helpful assistant that creates concise conversation summaries.',
+                            ),
+                            this.buildMessage('user', summarizationPrompt),
+                        ],
+                        ...(this.llmConfig.temperature !== undefined
+                            ? { temperature: this.llmConfig.temperature }
+                            : {}),
+                    }),
                 this.logger,
-                `summarization (${this.name})`
+                `summarization (${this.name})`,
             );
 
             const summary = this.extractTextFromResponse(response);
@@ -411,13 +434,19 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 // Add a system message with the summary context
                 newHistory.push({
                     role: 'system',
-                    content: `[Previous conversation summary: ${summary}]`
+                    content: `[Previous conversation summary: ${summary}]`,
                 });
 
                 // Filter out any previous summary system messages from messagesToKeep
                 // to avoid stacking multiple summaries over time
                 const filteredMessagesToKeep = messagesToKeep.filter(
-                    m => !(m.role === 'system' && m.content.startsWith('[Previous conversation summary:'))
+                    (m) =>
+                        !(
+                            m.role === 'system' &&
+                            m.content.startsWith(
+                                '[Previous conversation summary:',
+                            )
+                        ),
                 );
 
                 // Add the recent messages we kept (excluding previous summaries)
@@ -432,12 +461,12 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     newLength: this.conversationHistory.length,
                     summarizedCount: messagesToSummarize.length,
                     summaryLength: summary.length,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
                 });
 
                 this.logger.info(
                     `Summarized ${messagesToSummarize.length} messages into ${summary.length} chars, ` +
-                    `history reduced from ${previousLength} to ${this.conversationHistory.length} messages`
+                        `history reduced from ${previousLength} to ${this.conversationHistory.length} messages`,
                 );
             }
 
@@ -447,7 +476,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             // Fall back to simple trimming if summarization fails
             this.conversationHistory = [
                 ...(hasSystemFirst ? [this.conversationHistory[0]] : []),
-                ...messagesToKeep
+                ...messagesToKeep,
             ];
             return this.conversationSummary;
         }
@@ -490,7 +519,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         const response = await this.performTask(
             message,
             context,
-            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [] // Exclude the message we just added (it's in taskDescription)
+            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [], // Exclude the message we just added (it's in taskDescription)
         );
 
         // Add assistant response to history
@@ -504,7 +533,9 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      */
     setHistory(history: ConversationMessage[]): void {
         this.conversationHistory = [...history];
-        this.logger.info(`Conversation history set to ${history.length} messages`);
+        this.logger.info(
+            `Conversation history set to ${history.length} messages`,
+        );
     }
 
     /**
@@ -537,7 +568,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     async *chatStream(
         message: string,
         context: string = '',
-        onChunk?: (chunk: StreamChunk) => void
+        onChunk?: (chunk: StreamChunk) => void,
     ): AsyncGenerator<StreamChunk, string, unknown> {
         // Add user message to history
         await this.addToHistory({ role: 'user', content: message });
@@ -548,7 +579,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         for await (const chunk of this.performTaskStream(
             message,
             context,
-            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : []
+            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [],
         )) {
             if (chunk.content) {
                 fullResponse += chunk.content;
@@ -580,25 +611,29 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     async *performTaskStream(
         taskDescription: string,
         memoryContext: string = '',
-        chatHistory: ConversationMessage[] = []
+        chatHistory: ConversationMessage[] = [],
     ): AsyncGenerator<StreamChunk, string, unknown> {
         const task = this.createTask(taskDescription);
         this.updateTaskStatus(task.id, TaskStatus.IN_PROGRESS);
 
-        this.logger.info(`Starting streaming task: ${taskDescription.substring(0, 50)}...`);
+        this.logger.info(
+            `Starting streaming task: ${taskDescription.substring(0, 50)}...`,
+        );
         this.emit(AgentEvent.TASK_STARTED, {
             agent: this.name,
             task: taskDescription,
             taskId: task.id,
             timestamp: Date.now(),
-            streaming: true
+            streaming: true,
         });
 
         const conversation: ResponseInputItem[] = [];
         conversation.push(this.buildMessage('system', this.systemPrompt));
 
         if (this.tools.size > 0) {
-            conversation.push(this.buildMessage('system', this.buildToolInstruction()));
+            conversation.push(
+                this.buildMessage('system', this.buildToolInstruction()),
+            );
         }
 
         if (memoryContext.length > 0) {
@@ -616,12 +651,15 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         try {
             // Stream the response
-            const { text, toolCalls, responseId } = yield* this.streamResponse(conversation);
+            const { text, toolCalls, responseId } =
+                yield* this.streamResponse(conversation);
             fullText = text;
 
             // If we have tool calls, execute them and get a follow-up response
             if (toolCalls.length > 0) {
-                this.logger.info(`Processing ${toolCalls.length} tool calls from stream`);
+                this.logger.info(
+                    `Processing ${toolCalls.length} tool calls from stream`,
+                );
 
                 // Yield tool call notifications
                 for (const tc of toolCalls) {
@@ -629,7 +667,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                         type: 'tool_call_start',
                         toolName: tc.name,
                         toolCallId: tc.call_id,
-                        isComplete: false
+                        isComplete: false,
                     };
 
                     toolsUsed.push(tc.name);
@@ -639,15 +677,24 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     if (!parseResult.success) {
                         output = JSON.stringify({
                             error: 'Invalid JSON arguments',
-                            details: parseResult.error
+                            details: parseResult.error,
                         });
                     } else {
                         try {
-                            const result = await this.executeTool(tc.name, parseResult.args);
-                            output = typeof result === 'string' ? result : JSON.stringify(result);
+                            const result = await this.executeTool(
+                                tc.name,
+                                parseResult.args,
+                            );
+                            output =
+                                typeof result === 'string'
+                                    ? result
+                                    : JSON.stringify(result);
                         } catch (error) {
                             output = JSON.stringify({
-                                error: error instanceof Error ? error.message : String(error)
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
                             });
                         }
                     }
@@ -657,21 +704,26 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                         toolName: tc.name,
                         toolCallId: tc.call_id,
                         content: output,
-                        isComplete: false
+                        isComplete: false,
                     };
 
                     // Store tool output for follow-up
                     conversation.push({
                         type: 'function_call_output',
                         call_id: tc.call_id,
-                        output
+                        output,
                     } as ResponseInputItem);
                 }
 
                 // Get synthesis response (non-streaming for tool follow-up to avoid complexity)
                 // Use previous_response_id to maintain structured tool-call context
-                const synthesisResponse = await this.createResponse(conversation, false, responseId);
-                const synthesisText = this.extractTextFromResponse(synthesisResponse);
+                const synthesisResponse = await this.createResponse(
+                    conversation,
+                    false,
+                    responseId,
+                );
+                const synthesisText =
+                    this.extractTextFromResponse(synthesisResponse);
 
                 // Yield the synthesis as a final chunk
                 if (synthesisText) {
@@ -679,7 +731,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     yield {
                         type: 'text',
                         content: synthesisText,
-                        isComplete: false
+                        isComplete: false,
                     };
                 }
             }
@@ -687,7 +739,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             // Final completion signal
             yield {
                 type: 'done',
-                isComplete: true
+                isComplete: true,
             };
 
             this.emit(AgentEvent.STREAM_END, {
@@ -696,7 +748,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 taskId: task.id,
                 fullText,
                 toolsUsed,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
 
             this.updateTaskStatus(task.id, TaskStatus.COMPLETED, fullText);
@@ -710,8 +762,8 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     taskId: task.id,
                     model: this.llmConfig.model,
                     toolsUsed: toolsUsed.length > 0 ? toolsUsed : undefined,
-                    streaming: true
-                }
+                    streaming: true,
+                },
             };
 
             this.emit(AgentEvent.TASK_COMPLETED, taskResult);
@@ -722,15 +774,16 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 task.id,
                 TaskStatus.FAILED,
                 undefined,
-                error instanceof Error ? error : new Error(String(error))
+                error instanceof Error ? error : new Error(String(error)),
             );
 
             const taskError: TaskError = {
                 agent: this.name,
                 task: taskDescription,
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 timestamp: Date.now(),
-                metadata: { taskId: task.id }
+                metadata: { taskId: task.id },
             };
 
             this.emit(AgentEvent.TASK_FAILED, taskError);
@@ -742,12 +795,24 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * Internal method to stream a response and collect tool calls
      */
     private async *streamResponse(
-        conversation: ResponseInputItem[]
-    ): AsyncGenerator<StreamChunk, { text: string; toolCalls: Array<{ call_id: string; name: string; arguments: string }>; responseId?: string }, unknown> {
+        conversation: ResponseInputItem[],
+    ): AsyncGenerator<
+        StreamChunk,
+        {
+            text: string;
+            toolCalls: Array<{
+                call_id: string;
+                name: string;
+                arguments: string;
+            }>;
+            responseId?: string;
+        },
+        unknown
+    > {
         const request: Record<string, any> = {
             model: this.getModelForPurpose('task_execution'),
             input: conversation,
-            stream: true
+            stream: true,
         };
 
         if (this.llmConfig.temperature !== undefined) {
@@ -769,8 +834,15 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         let fullText = '';
         let responseId: string | undefined;
-        const toolCalls: Array<{ call_id: string; name: string; arguments: string }> = [];
-        const pendingToolCalls: Map<string, { name: string; arguments: string }> = new Map();
+        const toolCalls: Array<{
+            call_id: string;
+            name: string;
+            arguments: string;
+        }> = [];
+        const pendingToolCalls: Map<
+            string,
+            { name: string; arguments: string }
+        > = new Map();
 
         // Handle the stream
         for await (const event of stream as unknown as AsyncIterable<any>) {
@@ -782,21 +854,26 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 const chunk: StreamChunk = {
                     type: 'text',
                     content: delta,
-                    isComplete: false
+                    isComplete: false,
                 };
 
                 this.emit(AgentEvent.STREAM_CHUNK, {
                     agent: this.name,
                     chunk,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
                 });
 
                 yield chunk;
-            } else if (event.type === 'response.function_call_arguments.delta') {
+            } else if (
+                event.type === 'response.function_call_arguments.delta'
+            ) {
                 // Accumulate function arguments
                 const callId = event.call_id || event.item_id;
                 if (callId) {
-                    const existing = pendingToolCalls.get(callId) || { name: '', arguments: '' };
+                    const existing = pendingToolCalls.get(callId) || {
+                        name: '',
+                        arguments: '',
+                    };
                     existing.arguments += event.delta || '';
                     pendingToolCalls.set(callId, existing);
                 }
@@ -806,7 +883,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     const callId = event.item.call_id || event.item.id;
                     pendingToolCalls.set(callId, {
                         name: event.item.name || '',
-                        arguments: ''
+                        arguments: '',
                     });
                 }
             } else if (event.type === 'response.output_item.done') {
@@ -817,22 +894,29 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     toolCalls.push({
                         call_id: callId,
                         name: event.item.name || pending?.name || '',
-                        arguments: event.item.arguments || pending?.arguments || ''
+                        arguments:
+                            event.item.arguments || pending?.arguments || '',
                     });
                     pendingToolCalls.delete(callId);
                 }
-            } else if (event.type === 'response.completed' || event.type === 'response.done') {
+            } else if (
+                event.type === 'response.completed' ||
+                event.type === 'response.done'
+            ) {
                 // Stream completed - capture response ID and extract any remaining tool calls
                 if (event.response?.id) {
                     responseId = event.response.id;
                 }
                 if (event.response?.output) {
                     for (const item of event.response.output) {
-                        if (item.type === 'function_call' && !toolCalls.find(tc => tc.call_id === item.call_id)) {
+                        if (
+                            item.type === 'function_call' &&
+                            !toolCalls.find((tc) => tc.call_id === item.call_id)
+                        ) {
                             toolCalls.push({
                                 call_id: item.call_id,
                                 name: item.name,
-                                arguments: item.arguments
+                                arguments: item.arguments,
                             });
                         }
                     }
@@ -858,7 +942,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             summary: this.conversationSummary,
             agentId: this.id,
             agentName: this.name,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         };
     }
 
@@ -894,7 +978,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 agent: this.name,
                 from: ctx.message.from,
                 message: ctx.message,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
 
             // Call all registered handlers
@@ -952,7 +1036,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     sendMessage(
         to: string | string[],
         content: string,
-        options: SendMessageOptions = {}
+        options: SendMessageOptions = {},
     ): AgentMessage {
         if (!this.messageBus) {
             throw new Error('Agent is not connected to a message bus');
@@ -964,7 +1048,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             agent: this.name,
             to,
             message,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
 
         return message;
@@ -990,13 +1074,19 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         to: string,
         content: string,
         options: SendMessageOptions = {},
-        timeoutMs: number = 30000
+        timeoutMs: number = 30000,
     ): Promise<AgentMessage> {
         if (!this.messageBus) {
             throw new Error('Agent is not connected to a message bus');
         }
 
-        return this.messageBus.sendAndWait(this.name, to, content, options, timeoutMs);
+        return this.messageBus.sendAndWait(
+            this.name,
+            to,
+            content,
+            options,
+            timeoutMs,
+        );
     }
 
     /**
@@ -1006,7 +1096,10 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * @param options - Optional message options
      * @returns The sent message object
      */
-    broadcastMessage(content: string, options: Omit<SendMessageOptions, 'type'> = {}): AgentMessage {
+    broadcastMessage(
+        content: string,
+        options: Omit<SendMessageOptions, 'type'> = {},
+    ): AgentMessage {
         if (!this.messageBus) {
             throw new Error('Agent is not connected to a message bus');
         }
@@ -1089,7 +1182,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             status: TaskStatus.PENDING,
             assignedAgent: this.name,
             createdAt: now,
-            updatedAt: now
+            updatedAt: now,
         };
 
         this.taskHistory.set(taskId, task);
@@ -1099,7 +1192,12 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     /**
      * Update task status
      */
-    private updateTaskStatus(taskId: string, status: TaskStatus, result?: string, error?: Error): void {
+    private updateTaskStatus(
+        taskId: string,
+        status: TaskStatus,
+        result?: string,
+        error?: Error,
+    ): void {
         const task = this.taskHistory.get(taskId);
         if (task) {
             task.status = status;
@@ -1130,7 +1228,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         this.logger.debug(`Executing tool ${toolName} with args:`, args);
 
         // Validate input if the tool has a validator
-        if (tool.validateInput && !await tool.validateInput(args)) {
+        if (tool.validateInput && !(await tool.validateInput(args))) {
             throw new Error(`Invalid arguments for tool ${toolName}`);
         }
 
@@ -1142,7 +1240,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 tool: toolName,
                 args,
                 result,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
             return result;
         } catch (error) {
@@ -1151,16 +1249,19 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         }
     }
 
-    private buildMessage(role: 'system' | 'user' | 'developer', content: string): ResponseInputItem {
+    private buildMessage(
+        role: 'system' | 'user' | 'developer',
+        content: string,
+    ): ResponseInputItem {
         return {
             type: 'message',
             role,
             content: [
                 {
                     type: 'input_text',
-                    text: content
-                }
-            ]
+                    text: content,
+                },
+            ],
         };
     }
 
@@ -1175,13 +1276,15 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     type: 'output_text',
                     text: content,
                     annotations: [],
-                    logprobs: []
-                }
-            ]
+                    logprobs: [],
+                },
+            ],
         };
     }
 
-    private toResponseInputItem(message: ConversationMessage): ResponseInputItem {
+    private toResponseInputItem(
+        message: ConversationMessage,
+    ): ResponseInputItem {
         if (message.role === 'assistant') {
             return this.buildAssistantOutput(message.content);
         }
@@ -1194,57 +1297,67 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     }
 
     private buildResponsesToolDefinitions(): Array<any> {
-        return Array.from(this.tools.values()).map(tool => ({
+        return Array.from(this.tools.values()).map((tool) => ({
             type: 'function',
             name: tool.schema.name,
             description: tool.schema.description,
             parameters: {
                 ...tool.schema.parameters,
-                additionalProperties: false
+                additionalProperties: false,
             },
-            strict: true
+            strict: true,
         }));
     }
 
     private buildToolInstruction(): string {
         const instructions: string[] = [];
 
-        this.tools.forEach(tool => {
+        this.tools.forEach((tool) => {
             const required = tool.schema.parameters.required ?? [];
-            const properties = Object.entries(tool.schema.parameters.properties ?? {})
+            const properties = Object.entries(
+                tool.schema.parameters.properties ?? {},
+            )
                 .map(([key, value]) => {
-                    const requiredFlag = required.includes(key) ? ' (required)' : '';
+                    const requiredFlag = required.includes(key)
+                        ? ' (required)'
+                        : '';
                     return `- ${key}${requiredFlag}: ${value.description ?? 'no description provided'}`;
                 })
                 .join('\n');
 
-            instructions.push(`Tool ${tool.schema.name}: ${tool.description}\nParameters:\n${properties}`);
+            instructions.push(
+                `Tool ${tool.schema.name}: ${tool.description}\nParameters:\n${properties}`,
+            );
         });
 
-        instructions.push('When calling a tool, always provide valid JSON arguments for every required parameter.');
+        instructions.push(
+            'When calling a tool, always provide valid JSON arguments for every required parameter.',
+        );
 
-        if (this.tools.has('FileWrite'))
-        {
+        if (this.tools.has('FileWrite')) {
             instructions.push(
-                'When a task requires writing or saving content, you MUST call the FileWrite tool with a JSON object containing "filename" (including any directories) and "content" (the full text to write). Do not claim that a file was written unless the FileWrite tool call succeeds.'
+                'When a task requires writing or saving content, you MUST call the FileWrite tool with a JSON object containing "filename" (including any directories) and "content" (the full text to write). Do not claim that a file was written unless the FileWrite tool call succeeds.',
             );
-            instructions.push('Example: {"name":"FileWrite","arguments":{"filename":"output/report.md","content":"# Report"}}');
+            instructions.push(
+                'Example: {"name":"FileWrite","arguments":{"filename":"output/report.md","content":"# Report"}}',
+            );
         }
 
-        instructions.push('After receiving tool outputs, you should incorporate their results and produce a final assistant message.');
+        instructions.push(
+            'After receiving tool outputs, you should incorporate their results and produce a final assistant message.',
+        );
 
         return instructions.join('\n\n');
     }
 
-
     private async createResponse(
         conversation: ResponseInputItem[],
         allowTools: boolean,
-        previousResponseId?: string
+        previousResponseId?: string,
     ): Promise<Response> {
         const request: Record<string, any> = {
             model: this.getModelForPurpose('task_execution'),
-            input: conversation
+            input: conversation,
         };
 
         // Use previous_response_id for tool synthesis to maintain structured context
@@ -1263,17 +1376,25 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         // Add structured output format if responseSchema is provided
         if (this.responseSchema) {
             request.text = {
-                format: zodTextFormat(this.responseSchema.schema, this.responseSchema.name)
+                format: zodTextFormat(
+                    this.responseSchema.schema,
+                    this.responseSchema.name,
+                ),
             };
-            this.logger.info(`Using structured output schema: ${this.responseSchema.name}`);
+            this.logger.info(
+                `Using structured output schema: ${this.responseSchema.name}`,
+            );
         }
 
         if (allowTools && this.tools.size > 0) {
             const tools = this.buildResponsesToolDefinitions();
             this.logger.info(`Adding ${tools.length} tools to request`);
-            this.logger.debug(`Tools definition:`, JSON.stringify(tools, null, 2));
+            this.logger.debug(
+                `Tools definition:`,
+                JSON.stringify(tools, null, 2),
+            );
             request.tools = tools;
-            request.tool_choice = "auto";
+            request.tool_choice = 'auto';
         }
 
         this.logger.debug(`Full request:`, JSON.stringify(request, null, 2));
@@ -1282,37 +1403,52 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         return await withRetry(
             () => this.client.responses.create(request),
             this.logger,
-            `responses.create (${this.name})`
+            `responses.create (${this.name})`,
         );
     }
 
-    private async runResponseWorkflow(conversation: ResponseInputItem[], _taskDescription: string = ''): Promise<{ text: string; response: Response; toolsUsed: string[] }> {
+    private async runResponseWorkflow(
+        conversation: ResponseInputItem[],
+        _taskDescription: string = '',
+    ): Promise<{ text: string; response: Response; toolsUsed: string[] }> {
         const toolsUsed: string[] = [];
 
-        this.logger.info(`Starting response workflow with ${this.tools.size} tools available`);
+        this.logger.info(
+            `Starting response workflow with ${this.tools.size} tools available`,
+        );
 
         // Step 1: Get initial response with potential tool calls
-        let response = await this.createResponse(conversation, this.tools.size > 0);
+        const response = await this.createResponse(
+            conversation,
+            this.tools.size > 0,
+        );
 
         this.logger.info(`Got initial response, checking for tool calls...`);
 
         // Step 2: Extract tool calls from the response (handle both function_call items and message-embedded tool calls)
-        this.logger.debug(`Full response output:`, JSON.stringify(response.output, null, 2));
+        this.logger.debug(
+            `Full response output:`,
+            JSON.stringify(response.output, null, 2),
+        );
 
         const toolCalls = this.extractToolCalls(response);
 
-        this.logger.info(`Extracted ${toolCalls.length} tool calls from response`);
+        this.logger.info(
+            `Extracted ${toolCalls.length} tool calls from response`,
+        );
 
         // Step 3: If no tools called, return the response immediately
         if (toolCalls.length === 0) {
             const text = this.extractTextFromResponse(response);
             if (this.tools.size > 0 && !text) {
-                this.logger.warn(`No tool calls found and no text response. Available tools: ${Array.from(this.tools.keys()).join(', ')}`);
+                this.logger.warn(
+                    `No tool calls found and no text response. Available tools: ${Array.from(this.tools.keys()).join(', ')}`,
+                );
             }
             return {
                 text,
                 response,
-                toolsUsed
+                toolsUsed,
             };
         }
 
@@ -1328,7 +1464,9 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             this.logger.info(`Executing tool: ${tc.name}`, {
                 agent: this.name,
                 toolCallId: tc.call_id,
-                arguments: parseResult.success ? parseResult.args : '<parse failed>'
+                arguments: parseResult.success
+                    ? parseResult.args
+                    : '<parse failed>',
             });
 
             let output: string;
@@ -1338,16 +1476,28 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 output = JSON.stringify({
                     error: 'Invalid JSON arguments',
                     details: parseResult.error,
-                    rawArguments: tc.arguments
+                    rawArguments: tc.arguments,
                 });
-                this.logger.error(`Failed to parse arguments for tool ${tc.name}:`, { error: parseResult.error });
+                this.logger.error(
+                    `Failed to parse arguments for tool ${tc.name}:`,
+                    { error: parseResult.error },
+                );
             } else {
                 try {
-                    const result = await this.executeTool(tc.name, parseResult.args);
-                    output = typeof result === 'string' ? result : JSON.stringify(result);
+                    const result = await this.executeTool(
+                        tc.name,
+                        parseResult.args,
+                    );
+                    output =
+                        typeof result === 'string'
+                            ? result
+                            : JSON.stringify(result);
                 } catch (error) {
-                    const errorMessage = error instanceof Error ? error.message : String(error);
-                    this.logger.error(`Tool execution failed: ${tc.name}`, { error: errorMessage });
+                    const errorMessage =
+                        error instanceof Error ? error.message : String(error);
+                    this.logger.error(`Tool execution failed: ${tc.name}`, {
+                        error: errorMessage,
+                    });
                     output = JSON.stringify({ error: errorMessage });
                 }
             }
@@ -1355,35 +1505,44 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             toolOutputs.push({
                 type: 'function_call_output',
                 call_id: tc.call_id,
-                output
+                output,
             } as ResponseInputItem);
         }
 
         // Step 5: Send tool outputs back to the model for synthesis
-        this.logger.info(`Sending ${toolOutputs.length} tool outputs back to model for synthesis`);
+        this.logger.info(
+            `Sending ${toolOutputs.length} tool outputs back to model for synthesis`,
+        );
 
         // Use previous_response_id to maintain structured context.
         // This preserves the full function_call items (name, args, call_id) from the
         // initial response, allowing the model to deterministically align outputs to tools.
         // The input only needs the function_call_output items - the API handles context.
         const finalResponse = await withRetry(
-            () => this.client.responses.create({
-                model: this.getModelForPurpose('tool_synthesis'),
-                previous_response_id: response.id,  // Preserves structured tool-call context
-                input: toolOutputs,                  // Only the function_call_output items
-                ...(this.llmConfig.temperature !== undefined ? { temperature: this.llmConfig.temperature } : {}),
-                ...(this.llmConfig.maxTokens !== undefined ? { max_output_tokens: this.llmConfig.maxTokens } : {})
-            }),
+            () =>
+                this.client.responses.create({
+                    model: this.getModelForPurpose('tool_synthesis'),
+                    previous_response_id: response.id, // Preserves structured tool-call context
+                    input: toolOutputs, // Only the function_call_output items
+                    ...(this.llmConfig.temperature !== undefined
+                        ? { temperature: this.llmConfig.temperature }
+                        : {}),
+                    ...(this.llmConfig.maxTokens !== undefined
+                        ? { max_output_tokens: this.llmConfig.maxTokens }
+                        : {}),
+                }),
             this.logger,
-            `responses.create follow-up (${this.name})`
+            `responses.create follow-up (${this.name})`,
         );
 
-        this.logger.info(`Tool execution and synthesis completed. Tools used: ${toolsUsed.join(', ')}`);
+        this.logger.info(
+            `Tool execution and synthesis completed. Tools used: ${toolsUsed.join(', ')}`,
+        );
 
         return {
             text: this.extractTextFromResponse(finalResponse),
             response: finalResponse,
-            toolsUsed
+            toolsUsed,
         };
     }
 
@@ -1391,8 +1550,14 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * Extract tool calls from response output.
      * Handles the primary Responses API format (function_call items).
      */
-    private extractToolCalls(response: Response): Array<{ call_id: string; name: string; arguments: string }> {
-        const toolCalls: Array<{ call_id: string; name: string; arguments: string }> = [];
+    private extractToolCalls(
+        response: Response,
+    ): Array<{ call_id: string; name: string; arguments: string }> {
+        const toolCalls: Array<{
+            call_id: string;
+            name: string;
+            arguments: string;
+        }> = [];
 
         for (const item of response.output ?? []) {
             // Handle function_call items (Responses API format)
@@ -1401,7 +1566,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 toolCalls.push({
                     call_id: fc.call_id,
                     name: fc.name,
-                    arguments: fc.arguments
+                    arguments: fc.arguments,
                 });
             }
             // Note: The Responses API primarily uses function_call items at the output level.
@@ -1409,13 +1574,21 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             // Keeping minimal handling for potential future compatibility.
             else if (item.type === 'message' && 'content' in item) {
                 for (const content of (item as any).content ?? []) {
-                    if (content.type === 'tool_use' || content.type === 'function_call') {
+                    if (
+                        content.type === 'tool_use' ||
+                        content.type === 'function_call'
+                    ) {
                         toolCalls.push({
                             call_id: content.id || content.call_id,
                             name: content.name,
-                            arguments: typeof content.input === 'string'
-                                ? content.input
-                                : JSON.stringify(content.input || content.arguments || {})
+                            arguments:
+                                typeof content.input === 'string'
+                                    ? content.input
+                                    : JSON.stringify(
+                                          content.input ||
+                                              content.arguments ||
+                                              {},
+                                      ),
                         });
                     }
                 }
@@ -1428,7 +1601,11 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     /**
      * Parse tool arguments with explicit success/failure handling
      */
-    private parseToolArguments(value: string | null | undefined): { success: true; args: Record<string, any> } | { success: false; error: string; args: Record<string, any> } {
+    private parseToolArguments(
+        value: string | null | undefined,
+    ):
+        | { success: true; args: Record<string, any> }
+        | { success: false; error: string; args: Record<string, any> } {
         if (!value || value.trim() === '') {
             return { success: true, args: {} };
         }
@@ -1440,7 +1617,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             return {
                 success: false,
                 error: error instanceof Error ? error.message : String(error),
-                args: {} // Fallback for backwards compatibility, but caller should check success
+                args: {}, // Fallback for backwards compatibility, but caller should check success
             };
         }
     }
@@ -1473,24 +1650,28 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     async performTask(
         taskDescription: string,
         memoryContext: string = '',
-        chatHistory: ConversationMessage[] = []
+        chatHistory: ConversationMessage[] = [],
     ): Promise<string> {
         const task = this.createTask(taskDescription);
         this.updateTaskStatus(task.id, TaskStatus.IN_PROGRESS);
 
-        this.logger.info(`Starting task performance: ${taskDescription.substring(0, 50)}...`);
+        this.logger.info(
+            `Starting task performance: ${taskDescription.substring(0, 50)}...`,
+        );
         this.emit(AgentEvent.TASK_STARTED, {
             agent: this.name,
             task: taskDescription,
             taskId: task.id,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         });
 
         const conversation: ResponseInputItem[] = [];
         conversation.push(this.buildMessage('system', this.systemPrompt));
 
         if (this.tools.size > 0) {
-            conversation.push(this.buildMessage('system', this.buildToolInstruction()));
+            conversation.push(
+                this.buildMessage('system', this.buildToolInstruction()),
+            );
         }
 
         if (memoryContext.length > 0) {
@@ -1503,10 +1684,16 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         conversation.push(this.buildMessage('user', taskDescription));
 
-        this.logger.info(`Built conversation with ${conversation.length} items, starting workflow...`);
+        this.logger.info(
+            `Built conversation with ${conversation.length} items, starting workflow...`,
+        );
 
         try {
-            const { text: result, response, toolsUsed } = await this.runResponseWorkflow(conversation, taskDescription);
+            const {
+                text: result,
+                response,
+                toolsUsed,
+            } = await this.runResponseWorkflow(conversation, taskDescription);
 
             this.updateTaskStatus(task.id, TaskStatus.COMPLETED, result);
 
@@ -1519,25 +1706,31 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     taskId: task.id,
                     model: this.llmConfig.model,
                     responseId: response.id,
-                    toolsUsed: toolsUsed.length > 0 ? toolsUsed : undefined
-                }
+                    toolsUsed: toolsUsed.length > 0 ? toolsUsed : undefined,
+                },
             };
 
             this.emit(AgentEvent.TASK_COMPLETED, taskResult);
             return result;
         } catch (error) {
             this.logger.error(`Error performing task: ${error}`);
-            this.updateTaskStatus(task.id, TaskStatus.FAILED, undefined, error instanceof Error ? error : new Error(String(error)));
+            this.updateTaskStatus(
+                task.id,
+                TaskStatus.FAILED,
+                undefined,
+                error instanceof Error ? error : new Error(String(error)),
+            );
 
             const taskError: TaskError = {
                 agent: this.name,
                 task: taskDescription,
-                error: error instanceof Error ? error : new Error(String(error)),
+                error:
+                    error instanceof Error ? error : new Error(String(error)),
                 timestamp: Date.now(),
                 metadata: {
                     taskId: task.id,
-                    model: this.llmConfig.model
-                }
+                    model: this.llmConfig.model,
+                },
             };
 
             this.emit(AgentEvent.TASK_FAILED, taskError);
@@ -1555,7 +1748,9 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         }
 
         if (task.status !== TaskStatus.COMPLETED) {
-            throw new Error(`Cannot reflect on task ${taskId} as it is not completed`);
+            throw new Error(
+                `Cannot reflect on task ${taskId} as it is not completed`,
+            );
         }
 
         const reflectionPrompt = dedent`
@@ -1570,19 +1765,22 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         try {
             const reflection = await withRetry(
-                () => this.client.responses.create({
-                    model: this.getModelForPurpose('reflection'),
-                    input: [
-                        this.buildMessage('system', this.systemPrompt),
-                        this.buildMessage('user', reflectionPrompt)
-                    ],
-                    temperature: 0.7
-                }),
+                () =>
+                    this.client.responses.create({
+                        model: this.getModelForPurpose('reflection'),
+                        input: [
+                            this.buildMessage('system', this.systemPrompt),
+                            this.buildMessage('user', reflectionPrompt),
+                        ],
+                        temperature: 0.7,
+                    }),
                 this.logger,
-                `reflection (${this.name})`
+                `reflection (${this.name})`,
             );
 
-            const reflectionContent = this.extractTextFromResponse(reflection) || 'No reflection generated';
+            const reflectionContent =
+                this.extractTextFromResponse(reflection) ||
+                'No reflection generated';
 
             // Store reflection in task metadata
             if (!task.metadata) task.metadata = {};

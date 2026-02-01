@@ -19,7 +19,7 @@ const ENV_VAR_MAP: Record<ModelPurpose, string> = {
     reflection: 'MODEL_REFLECTION',
     summarization: 'MODEL_SUMMARIZATION',
     translation: 'MODEL_TRANSLATION',
-    planning: 'MODEL_PLANNING'
+    planning: 'MODEL_PLANNING',
 };
 
 const DEFAULT_MODEL_FALLBACK = 'gpt-4o-mini';
@@ -35,7 +35,7 @@ const KNOWN_MODEL_PATTERNS = [
     /^gemini/,
     /^llama/,
     /^mistral/,
-    /^codellama/
+    /^codellama/,
 ];
 
 export class ModelRouter {
@@ -46,11 +46,15 @@ export class ModelRouter {
 
     constructor(config?: ModelRouterConfig) {
         this.warnOnUnknown = config?.warnOnUnknown ?? true;
-        this.allowedModels = config?.allowedModels ? new Set(config.allowedModels) : undefined;
+        this.allowedModels = config?.allowedModels
+            ? new Set(config.allowedModels)
+            : undefined;
 
         // Validate and set default model
         const defaultModel = config?.defaultModel || DEFAULT_MODEL_FALLBACK;
-        this.defaultModel = this.validateModel(defaultModel, 'defaultModel') || DEFAULT_MODEL_FALLBACK;
+        this.defaultModel =
+            this.validateModel(defaultModel, 'defaultModel') ||
+            DEFAULT_MODEL_FALLBACK;
 
         this.purposeModels = new Map();
 
@@ -59,7 +63,10 @@ export class ModelRouter {
                 if (model) {
                     const validated = this.validateModel(model, purpose);
                     if (validated) {
-                        this.purposeModels.set(purpose as ModelPurpose, validated);
+                        this.purposeModels.set(
+                            purpose as ModelPurpose,
+                            validated,
+                        );
                     }
                 }
             }
@@ -74,19 +81,27 @@ export class ModelRouter {
         // Check for empty or whitespace-only strings
         const trimmed = model.trim();
         if (!trimmed) {
-            console.warn(`[ModelRouter] Empty model name provided for ${source}, ignoring`);
+            console.warn(
+                `[ModelRouter] Empty model name provided for ${source}, ignoring`,
+            );
             return null;
         }
 
         // Check against allowlist if provided
         if (this.allowedModels && !this.allowedModels.has(trimmed)) {
-            console.warn(`[ModelRouter] Model "${trimmed}" for ${source} is not in allowed list`);
+            console.warn(
+                `[ModelRouter] Model "${trimmed}" for ${source} is not in allowed list`,
+            );
         }
         // If no allowlist, warn on unknown patterns
         else if (this.warnOnUnknown && !this.allowedModels) {
-            const isKnown = KNOWN_MODEL_PATTERNS.some(pattern => pattern.test(trimmed));
+            const isKnown = KNOWN_MODEL_PATTERNS.some((pattern) =>
+                pattern.test(trimmed),
+            );
             if (!isKnown) {
-                console.warn(`[ModelRouter] Model "${trimmed}" for ${source} doesn't match known patterns - verify spelling`);
+                console.warn(
+                    `[ModelRouter] Model "${trimmed}" for ${source} doesn't match known patterns - verify spelling`,
+                );
             }
         }
 
@@ -109,7 +124,8 @@ export class ModelRouter {
      * - MODEL_PLANNING: Model for planning
      */
     static fromEnv(): ModelRouter {
-        const defaultModel = process.env.DEFAULT_MODEL || DEFAULT_MODEL_FALLBACK;
+        const defaultModel =
+            process.env.DEFAULT_MODEL || DEFAULT_MODEL_FALLBACK;
         const models: Partial<Record<ModelPurpose, string>> = {};
 
         for (const [purpose, envVar] of Object.entries(ENV_VAR_MAP)) {
@@ -164,7 +180,7 @@ export class ModelRouter {
      */
     getConfiguredModels(): Record<string, string> {
         const result: Record<string, string> = {
-            default: this.defaultModel
+            default: this.defaultModel,
         };
         for (const [purpose, model] of this.purposeModels) {
             result[purpose] = model;

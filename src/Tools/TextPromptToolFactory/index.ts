@@ -1,18 +1,19 @@
 import type OpenAI from 'openai';
-import Logger from '@/utils/logger.ts';
 import TextPromptTool from '@/Tools/TextPromptTool';
+import Logger from '@/utils/logger.ts';
 
 /**
  * Factory class for creating common text processing tools
  */
-export class TextPromptToolFactory
-{
+export class TextPromptToolFactory {
     private readonly client: OpenAI;
     private readonly logger: Logger;
     private readonly defaultModel: string;
 
-    constructor(client: OpenAI, options: { logger?: Logger; defaultModel?: string } = {})
-    {
+    constructor(
+        client: OpenAI,
+        options: { logger?: Logger; defaultModel?: string } = {},
+    ) {
         this.client = client;
         this.logger = options.logger || new Logger('TextPromptToolFactory');
         this.defaultModel = options.defaultModel || 'gpt-4o';
@@ -21,22 +22,23 @@ export class TextPromptToolFactory
     /**
      * Create a text summarization tool
      */
-    createSummarizer(options: {
-        name?: string;
-        description?: string;
-        wordCount?: number;
-        bullets?: boolean;
-        model?: string;
-        temperature?: number;
-    } = {}): TextPromptTool
-    {
+    createSummarizer(
+        options: {
+            name?: string;
+            description?: string;
+            wordCount?: number;
+            bullets?: boolean;
+            model?: string;
+            temperature?: number;
+        } = {},
+    ): TextPromptTool {
         const {
             name = 'TextSummarizer',
             description = 'Summarize text into a concise format',
             wordCount = 150,
             bullets = false,
             model = this.defaultModel,
-            temperature = 0.3
+            temperature = 0.3,
         } = options;
 
         const outputFormat = bullets ? 'bullet points' : 'paragraphs';
@@ -53,37 +55,38 @@ Text to summarize:
 {text}
 
 {options.instructions}`,
-                systemPrompt: `You are an expert at creating clear, accurate summaries that capture the key points of text while maintaining the original meaning and tone.`
+                systemPrompt: `You are an expert at creating clear, accurate summaries that capture the key points of text while maintaining the original meaning and tone.`,
             },
             this.client,
-            this.logger.child(name)
+            this.logger.child(name),
         );
     }
 
     /**
      * Create a text translation tool
      */
-    createTranslator(options: {
-        name?: string;
-        description?: string;
-        defaultTargetLanguage?: string;
-        preserveFormatting?: boolean;
-        model?: string;
-        temperature?: number;
-    } = {}): TextPromptTool
-    {
+    createTranslator(
+        options: {
+            name?: string;
+            description?: string;
+            defaultTargetLanguage?: string;
+            preserveFormatting?: boolean;
+            model?: string;
+            temperature?: number;
+        } = {},
+    ): TextPromptTool {
         const {
             name = 'TextTranslator',
             description = 'Translate text between languages',
             defaultTargetLanguage = 'English',
             preserveFormatting = true,
             model = this.defaultModel,
-            temperature = 0.3
+            temperature = 0.3,
         } = options;
 
-        const formattingInstruction = preserveFormatting ?
-                                      'Preserve the original formatting including paragraphs, bullet points, and emphasis.' :
-                                      'Focus on translation quality over preserving original formatting.';
+        const formattingInstruction = preserveFormatting
+            ? 'Preserve the original formatting including paragraphs, bullet points, and emphasis.'
+            : 'Focus on translation quality over preserving original formatting.';
 
         return new TextPromptTool(
             {
@@ -108,37 +111,37 @@ Your task is to translate content from the source language to the target languag
 - You MUST return ONLY the translated text.
 - You MUST NOT include any explanations or notes.
 - You MUST NOT retain any text in the original language.
-- You MUST translate ALL of the provided content.`
+- You MUST translate ALL of the provided content.`,
             },
             this.client,
-            this.logger.child(name)
+            this.logger.child(name),
         );
     }
 
     /**
      * Create a sentiment analysis tool
      */
-    createSentimentAnalyzer(options: {
-        name?: string;
-        description?: string;
-        format?: 'score' | 'detailed' | 'simple';
-        model?: string;
-        temperature?: number;
-    } = {}): TextPromptTool
-    {
+    createSentimentAnalyzer(
+        options: {
+            name?: string;
+            description?: string;
+            format?: 'score' | 'detailed' | 'simple';
+            model?: string;
+            temperature?: number;
+        } = {},
+    ): TextPromptTool {
         const {
             name = 'SentimentAnalyzer',
             description = 'Analyze the sentiment of text',
             format = 'detailed',
             model = this.defaultModel,
-            temperature = 0.1 // Lower temperature for more consistent analysis
+            temperature = 0.1, // Lower temperature for more consistent analysis
         } = options;
 
         let promptTemplate: string;
         let systemPrompt: string;
 
-        switch (format)
-        {
+        switch (format) {
             case 'score':
                 promptTemplate = `Analyze the sentiment of the following text and provide a score from -10 (extremely negative) to +10 (extremely positive). Return only the numerical score without any additional explanation.
                 
@@ -154,8 +157,6 @@ Text to analyze:
 {text}`;
                 systemPrompt = `You are a precise sentiment analysis tool that accurately classifies emotional tone. You always respond with only POSITIVE, NEGATIVE, or NEUTRAL.`;
                 break;
-
-            case 'detailed':
             default:
                 promptTemplate = `Analyze the sentiment of the following text. Provide:
 1. Overall sentiment (positive/negative/neutral)
@@ -178,26 +179,27 @@ Text to analyze:
                 model,
                 temperature,
                 promptTemplate,
-                systemPrompt
+                systemPrompt,
             },
             this.client,
-            this.logger.child(name)
+            this.logger.child(name),
         );
     }
 
     /**
      * Create a text extraction tool
      */
-    createExtractor(options: {
-        name?: string;
-        description?: string;
-        extractionType?: 'entities' | 'keywords' | 'custom';
-        customInstructions?: string;
-        outputFormat?: 'json' | 'list' | 'text';
-        model?: string;
-        temperature?: number;
-    } = {}): TextPromptTool
-    {
+    createExtractor(
+        options: {
+            name?: string;
+            description?: string;
+            extractionType?: 'entities' | 'keywords' | 'custom';
+            customInstructions?: string;
+            outputFormat?: 'json' | 'list' | 'text';
+            model?: string;
+            temperature?: number;
+        } = {},
+    ): TextPromptTool {
         const {
             name = 'TextExtractor',
             description = 'Extract specific information from text',
@@ -205,20 +207,21 @@ Text to analyze:
             customInstructions = '',
             outputFormat = 'json',
             model = this.defaultModel,
-            temperature = 0.2
+            temperature = 0.2,
         } = options;
 
         let extractionInstructions = '';
         let formatInstructions = '';
 
         // Set extraction instructions based on type
-        switch (extractionType)
-        {
+        switch (extractionType) {
             case 'entities':
-                extractionInstructions = 'Extract all named entities (people, organizations, locations, dates, etc.)';
+                extractionInstructions =
+                    'Extract all named entities (people, organizations, locations, dates, etc.)';
                 break;
             case 'keywords':
-                extractionInstructions = 'Extract the most important keywords and phrases that represent the main topics';
+                extractionInstructions =
+                    'Extract the most important keywords and phrases that represent the main topics';
                 break;
             case 'custom':
                 extractionInstructions = customInstructions;
@@ -226,16 +229,18 @@ Text to analyze:
         }
 
         // Set format instructions
-        switch (outputFormat)
-        {
+        switch (outputFormat) {
             case 'json':
-                formatInstructions = 'Format your response as a JSON object with appropriate categories.';
+                formatInstructions =
+                    'Format your response as a JSON object with appropriate categories.';
                 break;
             case 'list':
-                formatInstructions = 'Format your response as a simple bulleted list.';
+                formatInstructions =
+                    'Format your response as a simple bulleted list.';
                 break;
             case 'text':
-                formatInstructions = 'Format your response as plain text with clear structure.';
+                formatInstructions =
+                    'Format your response as plain text with clear structure.';
                 break;
         }
 
@@ -251,10 +256,10 @@ Text to process:
 {text}
 
 {options.specificInstructions}`,
-                systemPrompt: `You are an expert at analyzing text and precisely extracting relevant information according to instructions.`
+                systemPrompt: `You are an expert at analyzing text and precisely extracting relevant information according to instructions.`,
             },
             this.client,
-            this.logger.child(name)
+            this.logger.child(name),
         );
     }
 
@@ -269,15 +274,14 @@ Text to process:
         model?: string;
         temperature?: number;
         maxTokens?: number;
-    }): TextPromptTool
-    {
+    }): TextPromptTool {
         return new TextPromptTool(
             {
                 ...config,
-                model: config.model || this.defaultModel
+                model: config.model || this.defaultModel,
             },
             this.client,
-            this.logger.child(config.name)
+            this.logger.child(config.name),
         );
     }
 }

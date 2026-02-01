@@ -23,7 +23,7 @@ export enum TaskStatus {
     PENDING = 'pending',
     IN_PROGRESS = 'in_progress',
     COMPLETED = 'completed',
-    FAILED = 'failed'
+    FAILED = 'failed',
 }
 
 export interface Task {
@@ -160,15 +160,15 @@ export interface LlmConfig {
  * Different purposes can use different models for cost optimization
  */
 export type ModelPurpose =
-    | 'agent_selection'   // Selecting which agent handles a task
-    | 'task_execution'    // Agent performing its assigned task
-    | 'tool_synthesis'    // Synthesizing results after tool use
-    | 'final_response'    // Generating final crew response
-    | 'goal_achievement'  // Summarizing for crew goal
-    | 'reflection'        // Agent self-reflection
-    | 'summarization'     // Summarization tasks
-    | 'translation'       // Translation tasks
-    | 'planning';         // Task planning
+    | 'agent_selection' // Selecting which agent handles a task
+    | 'task_execution' // Agent performing its assigned task
+    | 'tool_synthesis' // Synthesizing results after tool use
+    | 'final_response' // Generating final crew response
+    | 'goal_achievement' // Summarizing for crew goal
+    | 'reflection' // Agent self-reflection
+    | 'summarization' // Summarization tasks
+    | 'translation' // Translation tasks
+    | 'planning'; // Task planning
 
 /**
  * Configuration for ModelRouter
@@ -198,13 +198,17 @@ export enum AgentEvent {
     STREAM_END = 'stream_end',
     // Agent-to-agent messaging events
     MESSAGE_SENT = 'agent_message_sent',
-    MESSAGE_RECEIVED = 'agent_message_received'
+    MESSAGE_RECEIVED = 'agent_message_received',
 }
 
 /**
  * Streaming chunk types for progressive response delivery
  */
-export type StreamChunkType = 'text' | 'tool_call_start' | 'tool_call_end' | 'done';
+export type StreamChunkType =
+    | 'text'
+    | 'tool_call_start'
+    | 'tool_call_end'
+    | 'done';
 
 export interface StreamChunk {
     type: StreamChunkType;
@@ -218,7 +222,7 @@ export enum CrewEvent {
     TASK_ASSIGNED = 'task_assigned',
     MEMORY_UPDATED = 'memory_updated',
     GOAL_ACHIEVED = 'goal_achieved',
-    GOAL_FAILED = 'goal_failed'
+    GOAL_FAILED = 'goal_failed',
 }
 
 // Interface for plugins to extend functionality
@@ -241,21 +245,21 @@ export interface ConversationMessage {
 
 // Agent-to-Agent Messaging Types
 export type AgentMessageType =
-    | 'request'      // Request for action or information
-    | 'response'     // Response to a request
+    | 'request' // Request for action or information
+    | 'response' // Response to a request
     | 'notification' // One-way notification
-    | 'handoff'      // Transfer of task/conversation
-    | 'broadcast';   // Message to multiple agents
+    | 'handoff' // Transfer of task/conversation
+    | 'broadcast'; // Message to multiple agents
 
 export interface AgentMessage {
     id: string;
-    from: string;        // Sender agent name
+    from: string; // Sender agent name
     to: string | string[]; // Recipient agent name(s)
     type: AgentMessageType;
     content: string;
     metadata?: Record<string, any>;
     timestamp: number;
-    replyTo?: string;    // ID of message being replied to
+    replyTo?: string; // ID of message being replied to
     priority?: 'low' | 'normal' | 'high' | 'urgent';
 }
 
@@ -264,4 +268,6 @@ export interface MessageHandlerContext {
     reply: (content: string, metadata?: Record<string, any>) => void;
 }
 
-export type MessageHandler = (context: MessageHandlerContext) => void | Promise<void>;
+export type MessageHandler = (
+    context: MessageHandlerContext,
+) => void | Promise<void>;

@@ -187,7 +187,7 @@ export enum MemoryEvent {
     ITEMS_EVICTED = 'memory:items_evicted',
     MEMORY_LOADED = 'memory:loaded',
     MEMORY_SAVED = 'memory:saved',
-    MEMORY_CLEARED = 'memory:cleared'
+    MEMORY_CLEARED = 'memory:cleared',
 }
 
 /**
@@ -207,7 +207,9 @@ export interface MemoryEventPayload {
  */
 export function createMemoryItem(
     partial: Pick<MemoryItem, 'key' | 'taskId' | 'agent' | 'task' | 'result'> &
-        Partial<Omit<MemoryItem, 'key' | 'taskId' | 'agent' | 'task' | 'result'>>
+        Partial<
+            Omit<MemoryItem, 'key' | 'taskId' | 'agent' | 'task' | 'result'>
+        >,
 ): MemoryItem {
     const now = Date.now();
     return {
@@ -226,7 +228,7 @@ export function createMemoryItem(
         tokenCount: partial.tokenCount ?? estimateTokens(partial.result),
         accessCount: partial.accessCount ?? 0,
         lastAccessedAt: partial.lastAccessedAt ?? now,
-        metadata: partial.metadata
+        metadata: partial.metadata,
     };
 }
 
@@ -241,17 +243,20 @@ export function estimateTokens(text: string): number {
  * Score a memory item by keyword relevance
  * Higher score = more relevant
  */
-export function scoreItemByKeywords(item: MemoryItem, keywords: string[]): number {
+export function scoreItemByKeywords(
+    item: MemoryItem,
+    keywords: string[],
+): number {
     if (!keywords || keywords.length === 0) {
         return 0;
     }
 
     let score = 0;
-    const lowerKeywords = keywords.map(k => k.toLowerCase());
+    const lowerKeywords = keywords.map((k) => k.toLowerCase());
 
     for (const keyword of lowerKeywords) {
         // Tags: +3 points for exact match (strong signal)
-        if (item.tags.some(tag => tag.toLowerCase() === keyword)) {
+        if (item.tags.some((tag) => tag.toLowerCase() === keyword)) {
             score += 3;
         }
 
@@ -266,12 +271,18 @@ export function scoreItemByKeywords(item: MemoryItem, keywords: string[]): numbe
         }
 
         // Tools used: +2 points for match
-        if (item.toolsUsed.some(tool => tool.toLowerCase().includes(keyword))) {
+        if (
+            item.toolsUsed.some((tool) => tool.toLowerCase().includes(keyword))
+        ) {
             score += 2;
         }
 
         // Capabilities used: +2 points for match
-        if (item.capabilitiesUsed.some(cap => cap.toLowerCase().includes(keyword))) {
+        if (
+            item.capabilitiesUsed.some((cap) =>
+                cap.toLowerCase().includes(keyword),
+            )
+        ) {
             score += 2;
         }
 

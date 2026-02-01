@@ -1,9 +1,9 @@
 import type OpenAI from 'openai';
-import type { Tool, ToolSchema, ModelPurpose } from '@/utils/types.ts';
-import Logger from '@/utils/logger.ts';
 import type { Response } from 'openai/resources/responses/responses';
-import { withRetry } from '@/utils/retry.ts';
 import type { ModelRouter } from '@/ModelRouter';
+import Logger from '@/utils/logger.ts';
+import { withRetry } from '@/utils/retry.ts';
+import type { ModelPurpose, Tool, ToolSchema } from '@/utils/types.ts';
 
 interface TextPromptConfig {
     name: string;
@@ -46,10 +46,12 @@ export class TextPromptTool implements Tool {
         this.name = config.name;
         this.description = config.description;
         this.promptTemplate = config.promptTemplate;
-        this.systemPrompt = config.systemPrompt || 'You are a helpful assistant that processes text according to instructions.';
+        this.systemPrompt =
+            config.systemPrompt ||
+            'You are a helpful assistant that processes text according to instructions.';
         this.model = config.model || process.env.DEFAULT_MODEL || 'gpt-4o';
-        this.temperature = config.temperature;  // undefined if not set
-        this.maxTokens = config.maxTokens;      // undefined if not set
+        this.temperature = config.temperature; // undefined if not set
+        this.maxTokens = config.maxTokens; // undefined if not set
         this.purpose = config.purpose || 'summarization';
         this.modelRouter = config.modelRouter;
         this.client = client;
@@ -64,18 +66,18 @@ export class TextPromptTool implements Tool {
                 properties: {
                     text: {
                         type: 'string',
-                        description: 'The input text to process'
+                        description: 'The input text to process',
                     },
                     // Note: Additional parameters defined based on the prompt template
                     // will be accessible but aren't explicitly defined in the schema
                     // This keeps the tool flexible
                     options: {
                         type: 'object',
-                        description: 'Additional options for text processing'
-                    }
+                        description: 'Additional options for text processing',
+                    },
                 },
-                required: ['text']
-            }
+                required: ['text'],
+            },
         };
     }
 
@@ -94,7 +96,11 @@ export class TextPromptTool implements Tool {
      * Returns the capabilities of this tool
      */
     public getCapabilities(): string[] {
-        return ['text_processing', 'llm_prompt_execution', this.name.toLowerCase()];
+        return [
+            'text_processing',
+            'llm_prompt_execution',
+            this.name.toLowerCase(),
+        ];
     }
 
     /**
@@ -111,33 +117,36 @@ export class TextPromptTool implements Tool {
      * Populate the template with values from args
      */
     private populateTemplate(template: string, args: TextPromptArgs): string {
-        return template.replace(/\{(\w+)(?:\|([^}]+))?\}/g, (match, key, defaultValue) => {
-            // First check if the key exists directly in args
-            if (key in args) {
-                return String(args[key]);
-            }
-
-            // Next, check if it's nested in options
-            if (args.options && key in args.options) {
-                return String(args.options[key]);
-            }
-
-            // If key is "options.X", try to get from args.options.X
-            if (key.startsWith('options.') && args.options) {
-                const optionKey = key.split('.')[1];
-                if (optionKey in args.options) {
-                    return String(args.options[optionKey]);
+        return template.replace(
+            /\{(\w+)(?:\|([^}]+))?\}/g,
+            (match, key, defaultValue) => {
+                // First check if the key exists directly in args
+                if (key in args) {
+                    return String(args[key]);
                 }
-            }
 
-            // Finally use the default value if provided
-            if (defaultValue !== undefined) {
-                return defaultValue;
-            }
+                // Next, check if it's nested in options
+                if (args.options && key in args.options) {
+                    return String(args.options[key]);
+                }
 
-            // Keep the placeholder if no value is found
-            return match;
-        });
+                // If key is "options.X", try to get from args.options.X
+                if (key.startsWith('options.') && args.options) {
+                    const optionKey = key.split('.')[1];
+                    if (optionKey in args.options) {
+                        return String(args.options[optionKey]);
+                    }
+                }
+
+                // Finally use the default value if provided
+                if (defaultValue !== undefined) {
+                    return defaultValue;
+                }
+
+                // Keep the placeholder if no value is found
+                return match;
+            },
+        );
     }
 
     /**
@@ -151,25 +160,33 @@ export class TextPromptTool implements Tool {
         try {
             this.logger.debug(`Processing text with ${this.name}`, {
                 textLength: args.text.length,
-                args: Object.keys(args).filter(k => k !== 'text')
+                args: Object.keys(args).filter((k) => k !== 'text'),
             });
 
             // Populate the prompt template with args
-            const populatedPrompt = this.populateTemplate(this.promptTemplate, args);
+            const populatedPrompt = this.populateTemplate(
+                this.promptTemplate,
+                args,
+            );
 
             // Make the LLM request
             const response = await withRetry(
-                () => this.client.responses.create({
-                    model: this.getModel(),
-                    input: [
-                        { role: 'system', content: this.systemPrompt },
-                        { role: 'user', content: populatedPrompt }
-                    ],
-                    ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
-                    ...(this.maxTokens !== undefined ? { max_output_tokens: this.maxTokens } : {})
-                }),
+                () =>
+                    this.client.responses.create({
+                        model: this.getModel(),
+                        input: [
+                            { role: 'system', content: this.systemPrompt },
+                            { role: 'user', content: populatedPrompt },
+                        ],
+                        ...(this.temperature !== undefined
+                            ? { temperature: this.temperature }
+                            : {}),
+                        ...(this.maxTokens !== undefined
+                            ? { max_output_tokens: this.maxTokens }
+                            : {}),
+                    }),
                 this.logger,
-                `text_prompt_tool:${this.name}`
+                `text_prompt_tool:${this.name}`,
             );
 
             const result = this.extractTextFromResponse(response);
@@ -179,12 +196,15 @@ export class TextPromptTool implements Tool {
 
             this.logger.debug(`Successfully processed text with ${this.name}`, {
                 inputLength: args.text.length,
-                outputLength: result.length
+                outputLength: result.length,
             });
 
             return result;
         } catch (error) {
-            this.logger.error(`Error processing text with ${this.name}:`, error);
+            this.logger.error(
+                `Error processing text with ${this.name}:`,
+                error,
+            );
             throw error;
         }
     }

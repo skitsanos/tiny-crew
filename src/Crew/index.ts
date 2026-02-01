@@ -1,18 +1,28 @@
-import {EventEmitter} from 'events';
-import {randomUUID} from 'crypto';
-import type OpenAI from 'openai';
-import type Agent from '@/Agent';
-import {AgentEvent, type ConversationMessage, type CrewConfig, CrewEvent, TaskStatus} from '@/utils/types.ts';
-import Logger from '@/utils/logger.ts';
+import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import dedent from 'dedent';
+import type OpenAI from 'openai';
 import type {
     Response,
     ResponseInputItem,
-    ResponseOutputMessage
+    ResponseOutputMessage,
 } from 'openai/resources/responses/responses';
-import {withRetry} from '@/utils/retry.ts';
-import { MemoryStore, type MemoryBackend, type MemoryStoreConfig } from '@/Memory';
+import type Agent from '@/Agent';
+import {
+    type MemoryBackend,
+    MemoryStore,
+    type MemoryStoreConfig,
+} from '@/Memory';
 import { ModelRouter } from '@/ModelRouter';
+import Logger from '@/utils/logger.ts';
+import { withRetry } from '@/utils/retry.ts';
+import {
+    AgentEvent,
+    type ConversationMessage,
+    type CrewConfig,
+    CrewEvent,
+    TaskStatus,
+} from '@/utils/types.ts';
 
 /**
  * Tracks agent performance for heuristic-based task assignment
@@ -59,7 +69,7 @@ export class Crew extends EventEmitter {
         config: CrewConfig,
         client: OpenAI,
         chatHistory: ConversationMessage[] = [],
-        options?: CrewOptions
+        options?: CrewOptions,
     ) {
         super();
         this.id = randomUUID();
@@ -70,8 +80,12 @@ export class Crew extends EventEmitter {
         this.pendingTasks = [];
         this.agentPerformance = new Map();
 
-        this.taskAssignmentPrompt = config.taskAssignmentPrompt || this.buildDefaultTaskAssignmentPrompt();
-        this.summarizationPrompt = config.summarizationPrompt || this.buildDefaultSummarizationPrompt();
+        this.taskAssignmentPrompt =
+            config.taskAssignmentPrompt ||
+            this.buildDefaultTaskAssignmentPrompt();
+        this.summarizationPrompt =
+            config.summarizationPrompt ||
+            this.buildDefaultSummarizationPrompt();
 
         this.logger = new Logger('Crew');
 
@@ -79,7 +93,7 @@ export class Crew extends EventEmitter {
         this.memoryStore = new MemoryStore(
             options?.memoryBackend,
             options?.memoryConfig,
-            this.logger
+            this.logger,
         );
 
         // Initialize model router (defaults to env-based configuration)
@@ -156,7 +170,7 @@ export class Crew extends EventEmitter {
             this.agentPerformance.set(agentName, {
                 successCount: 0,
                 failureCount: 0,
-                lastTaskTypes: []
+                lastTaskTypes: [],
             });
         }
 
@@ -166,7 +180,7 @@ export class Crew extends EventEmitter {
                 status: TaskStatus.COMPLETED,
                 timestamp: result.timestamp,
                 taskId: result.metadata?.taskId,
-                toolsUsed: result.metadata?.toolsUsed
+                toolsUsed: result.metadata?.toolsUsed,
             });
 
             // Track success and task keywords for heuristic matching
@@ -174,18 +188,32 @@ export class Crew extends EventEmitter {
             if (perf) {
                 perf.successCount++;
                 const keywords = this.extractTaskKeywords(result.task);
-                perf.lastTaskTypes = [...keywords, ...perf.lastTaskTypes].slice(0, 10);
+                perf.lastTaskTypes = [...keywords, ...perf.lastTaskTypes].slice(
+                    0,
+                    10,
+                );
             }
         });
 
         agent.on(AgentEvent.TASK_FAILED, (error) => {
-            const errorMessage = error.error instanceof Error ? error.error.message : String(error.error);
-            this.logger.warn(`Task failed for agent ${error.agent}: ${error.task}`, { error: errorMessage });
-            this.storeTaskResult(error.agent, error.task, `Task failed: ${errorMessage}`, {
-                status: TaskStatus.FAILED,
-                timestamp: error.timestamp,
-                taskId: error.metadata?.taskId
-            });
+            const errorMessage =
+                error.error instanceof Error
+                    ? error.error.message
+                    : String(error.error);
+            this.logger.warn(
+                `Task failed for agent ${error.agent}: ${error.task}`,
+                { error: errorMessage },
+            );
+            this.storeTaskResult(
+                error.agent,
+                error.task,
+                `Task failed: ${errorMessage}`,
+                {
+                    status: TaskStatus.FAILED,
+                    timestamp: error.timestamp,
+                    taskId: error.metadata?.taskId,
+                },
+            );
 
             // Track failure
             const perf = this.agentPerformance.get(error.agent);
@@ -233,41 +261,52 @@ export class Crew extends EventEmitter {
     /**
      * Store a task result in the memory store
      */
-    private storeTaskResult(agent: string, task: string, result: string, metadata: Record<string, any> = {}): void {
+    private storeTaskResult(
+        agent: string,
+        task: string,
+        result: string,
+        metadata: Record<string, any> = {},
+    ): void {
         const taskId = metadata.taskId || randomUUID().split('-')[0];
         const taskSlug = task.slice(0, 30).replace(/\W+/g, '_');
         const itemKey = `task_${taskId}_${taskSlug}`;
 
         // Store in MemoryStore
-        this.memoryStore.set(
-            this.id,
-            itemKey,
-            {
-                taskId,
-                agent,
-                task,
-                result,
-                toolsUsed: metadata.toolsUsed,
-                metadata: {
-                    status: metadata.status,
-                    timestamp: metadata.timestamp
-                }
-            },
-            {
-                tags: metadata.status ? [metadata.status] : []
-            }
-        ).catch(err => {
-            this.logger.warn('Failed to store task result:', err);
-        });
+        this.memoryStore
+            .set(
+                this.id,
+                itemKey,
+                {
+                    taskId,
+                    agent,
+                    task,
+                    result,
+                    toolsUsed: metadata.toolsUsed,
+                    metadata: {
+                        status: metadata.status,
+                        timestamp: metadata.timestamp,
+                    },
+                },
+                {
+                    tags: metadata.status ? [metadata.status] : [],
+                },
+            )
+            .catch((err) => {
+                this.logger.warn('Failed to store task result:', err);
+            });
 
-        this.logger.info('Task result stored:', { key: itemKey, task: task.slice(0, 50), agent });
+        this.logger.info('Task result stored:', {
+            key: itemKey,
+            task: task.slice(0, 50),
+            agent,
+        });
 
         this.emit(CrewEvent.MEMORY_UPDATED, {
             crew: this.id,
             key: itemKey,
             agent,
             task,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
         });
     }
 
@@ -331,9 +370,9 @@ export class Crew extends EventEmitter {
             maxItems: options?.maxItems,
             filter: {
                 agent: options?.agent,
-                tags: options?.tags
+                tags: options?.tags,
             },
-            relevanceKeywords: options?.relevanceKeywords
+            relevanceKeywords: options?.relevanceKeywords,
         });
     }
 
@@ -358,18 +397,62 @@ export class Crew extends EventEmitter {
      */
     private extractTaskKeywords(task: string): string[] {
         const stopWords = new Set([
-            'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-            'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
-            'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-            'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need',
-            'it', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'we', 'they'
+            'a',
+            'an',
+            'the',
+            'and',
+            'or',
+            'but',
+            'in',
+            'on',
+            'at',
+            'to',
+            'for',
+            'of',
+            'with',
+            'by',
+            'from',
+            'as',
+            'is',
+            'was',
+            'are',
+            'were',
+            'been',
+            'be',
+            'have',
+            'has',
+            'had',
+            'do',
+            'does',
+            'did',
+            'will',
+            'would',
+            'could',
+            'should',
+            'may',
+            'might',
+            'must',
+            'shall',
+            'can',
+            'need',
+            'it',
+            'this',
+            'that',
+            'these',
+            'those',
+            'i',
+            'you',
+            'he',
+            'she',
+            'we',
+            'they',
         ]);
 
         return task
             .toLowerCase()
             .replace(/[^\w\s]/g, ' ')
             .split(/\s+/)
-            .filter(word => word.length > 2 && !stopWords.has(word));
+            .filter((word) => word.length > 2 && !stopWords.has(word));
     }
 
     /**
@@ -380,25 +463,40 @@ export class Crew extends EventEmitter {
         const agentName = agent.getName();
 
         // 1. Capability matching (strongest signal)
-        const capabilities = agent.getCapabilities().map(c => c.toLowerCase());
+        const capabilities = agent
+            .getCapabilities()
+            .map((c) => c.toLowerCase());
         for (const keyword of taskKeywords) {
-            if (capabilities.some(cap => cap.includes(keyword) || keyword.includes(cap))) {
+            if (
+                capabilities.some(
+                    (cap) => cap.includes(keyword) || keyword.includes(cap),
+                )
+            ) {
                 score += 10;
             }
         }
 
         // 2. Tool matching (check if task mentions tools the agent has)
-        const toolNames = agent.getTools().map(t => t.name.toLowerCase());
+        const toolNames = agent.getTools().map((t) => t.name.toLowerCase());
         for (const keyword of taskKeywords) {
-            if (toolNames.some(tool => tool.includes(keyword) || keyword.includes(tool))) {
+            if (
+                toolNames.some(
+                    (tool) => tool.includes(keyword) || keyword.includes(tool),
+                )
+            ) {
                 score += 8;
             }
             // Check if task needs tools the agent has
             if (keyword === 'save' || keyword === 'write') {
-                if (toolNames.some(t => t.includes('file'))) score += 5;
+                if (toolNames.some((t) => t.includes('file'))) score += 5;
             }
             if (keyword === 'scrape' || keyword === 'fetch') {
-                if (toolNames.some(t => t.includes('scrape') || t.includes('web'))) score += 5;
+                if (
+                    toolNames.some(
+                        (t) => t.includes('scrape') || t.includes('web'),
+                    )
+                )
+                    score += 5;
             }
         }
 
@@ -438,43 +536,58 @@ export class Crew extends EventEmitter {
         this.logger.debug('Task keywords:', taskKeywords);
 
         // Score all agents using heuristics
-        const scoredAgents = Array.from(this.agents.values()).map(agent => ({
+        const scoredAgents = Array.from(this.agents.values()).map((agent) => ({
             agent,
-            score: this.scoreAgentForTask(agent, taskKeywords)
+            score: this.scoreAgentForTask(agent, taskKeywords),
         }));
 
         // Sort by score descending
         scoredAgents.sort((a, b) => b.score - a.score);
 
-        this.logger.debug('Agent scores:', scoredAgents.map(s => ({
-            name: s.agent.getName(),
-            score: s.score
-        })));
+        this.logger.debug(
+            'Agent scores:',
+            scoredAgents.map((s) => ({
+                name: s.agent.getName(),
+                score: s.score,
+            })),
+        );
 
         // If there's a clear winner (score > 0 and significantly better than second place), use it
         if (scoredAgents.length > 0 && scoredAgents[0].score > 0) {
             const topScore = scoredAgents[0].score;
-            const secondScore = scoredAgents.length > 1 ? scoredAgents[1].score : 0;
+            const secondScore =
+                scoredAgents.length > 1 ? scoredAgents[1].score : 0;
 
             // Clear winner if score is at least 5 and at least 50% better than second place
-            if (topScore >= 5 && (secondScore === 0 || topScore >= secondScore * 1.5)) {
-                this.logger.info(`Heuristic match: ${scoredAgents[0].agent.getName()} (score: ${topScore})`);
+            if (
+                topScore >= 5 &&
+                (secondScore === 0 || topScore >= secondScore * 1.5)
+            ) {
+                this.logger.info(
+                    `Heuristic match: ${scoredAgents[0].agent.getName()} (score: ${topScore})`,
+                );
                 return scoredAgents[0].agent;
             }
         }
 
         // Fallback to LLM for ambiguous cases
-        this.logger.info('Using LLM for agent selection (heuristics inconclusive)');
+        this.logger.info(
+            'Using LLM for agent selection (heuristics inconclusive)',
+        );
 
         const agentDescriptions = Array.from(this.agents.values())
-            .map(agent => {
+            .map((agent) => {
                 const perf = this.agentPerformance.get(agent.getName());
-                const perfInfo = perf && (perf.successCount + perf.failureCount) > 0
-                    ? `\n        Success rate: ${Math.round(perf.successCount / (perf.successCount + perf.failureCount) * 100)}%`
-                    : '';
+                const perfInfo =
+                    perf && perf.successCount + perf.failureCount > 0
+                        ? `\n        Success rate: ${Math.round((perf.successCount / (perf.successCount + perf.failureCount)) * 100)}%`
+                        : '';
                 return `${agent.getName()}: ${agent.getGoal()}
         Capabilities: ${agent.getCapabilities().join(', ')}
-        Tools: ${agent.getTools().map(t => t.name).join(', ')}${perfInfo}`;
+        Tools: ${agent
+            .getTools()
+            .map((t) => t.name)
+            .join(', ')}${perfInfo}`;
             })
             .join('\n\n');
 
@@ -485,22 +598,24 @@ export class Crew extends EventEmitter {
 
         try {
             const response = await withRetry(
-                () => this.client.responses.create({
-                    model: this.modelRouter.getModel('agent_selection'),
-                    input: [
-                        {
-                            role: 'user',
-                            content: prompt
-                        }
-                    ],
-                    temperature: 0.3,
-                    max_output_tokens: 50
-                }),
+                () =>
+                    this.client.responses.create({
+                        model: this.modelRouter.getModel('agent_selection'),
+                        input: [
+                            {
+                                role: 'user',
+                                content: prompt,
+                            },
+                        ],
+                        temperature: 0.3,
+                        max_output_tokens: 50,
+                    }),
                 this.logger,
-                'crew:agent-selection'
+                'crew:agent-selection',
             );
 
-            const chosenAgentName = this.extractTextFromResponse(response)?.trim();
+            const chosenAgentName =
+                this.extractTextFromResponse(response)?.trim();
 
             if (chosenAgentName === 'NONE') {
                 this.logger.warn(`No suitable agent found for task: ${task}`);
@@ -509,7 +624,9 @@ export class Crew extends EventEmitter {
 
             // Find the agent with case-insensitive matching
             return Array.from(this.agents.values()).find(
-                agent => agent.getName().toLowerCase() === chosenAgentName?.toLowerCase()
+                (agent) =>
+                    agent.getName().toLowerCase() ===
+                    chosenAgentName?.toLowerCase(),
             );
         } catch (error) {
             this.logger.error('Error finding suitable agent:', error);
@@ -538,7 +655,7 @@ export class Crew extends EventEmitter {
                 crew: this.id,
                 agent: agent.getName(),
                 task,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
 
             try {
@@ -549,16 +666,20 @@ export class Crew extends EventEmitter {
                 const memoryContext = await this.buildMemoryContext({
                     maxTokens: 4000,
                     maxItems: 10,
-                    relevanceKeywords: taskKeywords
+                    relevanceKeywords: taskKeywords,
                 });
 
-                const result = await agent.performTask(task, memoryContext, this.chatHistory);
+                const result = await agent.performTask(
+                    task,
+                    memoryContext,
+                    this.chatHistory,
+                );
 
                 // Update chat history with the result
                 this.updateChatHistory({
                     role: 'assistant',
                     name: agent.getName(),
-                    content: result
+                    content: result,
                 });
 
                 return result;
@@ -584,7 +705,8 @@ export class Crew extends EventEmitter {
                 results[task] = await this.assignTask(task);
             } catch (error) {
                 this.logger.error(`Error executing task "${task}":`, error);
-                results[task] = `Error: ${error instanceof Error ? error.message : String(error)}`;
+                results[task] =
+                    `Error: ${error instanceof Error ? error.message : String(error)}`;
             }
         }
 
@@ -608,7 +730,8 @@ export class Crew extends EventEmitter {
                 results[task] = await this.assignTask(task);
             } catch (error) {
                 this.logger.error(`Error executing task "${task}":`, error);
-                results[task] = `Error: ${error instanceof Error ? error.message : String(error)}`;
+                results[task] =
+                    `Error: ${error instanceof Error ? error.message : String(error)}`;
             }
         });
 
@@ -623,15 +746,20 @@ export class Crew extends EventEmitter {
     /**
      * Generate a final response based on all completed tasks
      */
-    async provideFinalResponse(instruction: string = 'Format your response as a concise answer that addresses the crew\'s goal'): Promise<string> {
+    async provideFinalResponse(
+        instruction: string = "Format your response as a concise answer that addresses the crew's goal",
+    ): Promise<string> {
         // Query all task results from memory
         const memoryItems = await this.memoryStore.query(this.id, {
             sortBy: 'recency',
-            maxItems: 100
+            maxItems: 100,
         });
 
         const allResults = memoryItems
-            .map(item => `Task: ${item.task}\nAgent: ${item.agent}\nResult: ${item.result}`)
+            .map(
+                (item) =>
+                    `Task: ${item.task}\nAgent: ${item.agent}\nResult: ${item.result}`,
+            )
             .join('\n\n');
 
         const finalAnswerPrompt = `
@@ -646,29 +774,36 @@ export class Crew extends EventEmitter {
 
         try {
             const input: ResponseInputItem[] = [
-                ...this.chatHistory.map(message => this.toResponseInputItem(message)),
-                this.buildMessage('user', finalAnswerPrompt)
+                ...this.chatHistory.map((message) =>
+                    this.toResponseInputItem(message),
+                ),
+                this.buildMessage('user', finalAnswerPrompt),
             ];
 
             const response = await withRetry(
-                () => this.client.responses.create({
-                    model: this.modelRouter.getModel('final_response'),
-                    input,
-                    temperature: 0.3
-                }),
+                () =>
+                    this.client.responses.create({
+                        model: this.modelRouter.getModel('final_response'),
+                        input,
+                        temperature: 0.3,
+                    }),
                 this.logger,
-                'crew:final-response'
+                'crew:final-response',
             );
 
             const finalResponse = this.extractTextFromResponse(response);
             if (finalResponse) {
                 // Add the final response to shared memory
-                this.storeTaskResult('AI Assistant', 'Final Answer', finalResponse);
+                this.storeTaskResult(
+                    'AI Assistant',
+                    'Final Answer',
+                    finalResponse,
+                );
 
                 // Update chat history
                 this.updateChatHistory({
                     role: 'assistant',
-                    content: finalResponse
+                    content: finalResponse,
                 });
 
                 return finalResponse;
@@ -690,11 +825,14 @@ export class Crew extends EventEmitter {
         // Query all task results from memory
         const memoryItems = await this.memoryStore.query(this.id, {
             sortBy: 'recency',
-            maxItems: 100
+            maxItems: 100,
         });
 
         const allResults = memoryItems
-            .map(item => `Task: ${item.task}\nAgent: ${item.agent}\nResult: ${item.result}`)
+            .map(
+                (item) =>
+                    `Task: ${item.task}\nAgent: ${item.agent}\nResult: ${item.result}`,
+            )
             .join('\n\n');
 
         const summaryPrompt = this.summarizationPrompt
@@ -703,15 +841,14 @@ export class Crew extends EventEmitter {
 
         try {
             const response = await withRetry(
-                () => this.client.responses.create({
-                    model: this.modelRouter.getModel('goal_achievement'),
-                    input: [
-                        this.buildMessage('user', summaryPrompt)
-                    ],
-                    temperature: 0.5
-                }),
+                () =>
+                    this.client.responses.create({
+                        model: this.modelRouter.getModel('goal_achievement'),
+                        input: [this.buildMessage('user', summaryPrompt)],
+                        temperature: 0.5,
+                    }),
                 this.logger,
-                'crew:summary'
+                'crew:summary',
             );
 
             const summary = this.extractTextFromResponse(response);
@@ -723,7 +860,7 @@ export class Crew extends EventEmitter {
                     crew: this.id,
                     goal: this.goal,
                     summary,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
                 });
 
                 return summary;
@@ -737,23 +874,26 @@ export class Crew extends EventEmitter {
                 crew: this.id,
                 goal: this.goal,
                 error: error instanceof Error ? error.message : String(error),
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
 
             throw error;
         }
     }
 
-    private buildMessage(role: 'user' | 'system' | 'developer', content: string): ResponseInputItem {
+    private buildMessage(
+        role: 'user' | 'system' | 'developer',
+        content: string,
+    ): ResponseInputItem {
         return {
             type: 'message',
             role,
             content: [
                 {
                     type: 'input_text',
-                    text: content
-                }
-            ]
+                    text: content,
+                },
+            ],
         };
     }
 
@@ -768,13 +908,15 @@ export class Crew extends EventEmitter {
                     type: 'output_text',
                     text: content,
                     annotations: [],
-                    logprobs: []
-                }
-            ]
+                    logprobs: [],
+                },
+            ],
         };
     }
 
-    private toResponseInputItem(message: ConversationMessage): ResponseInputItem {
+    private toResponseInputItem(
+        message: ConversationMessage,
+    ): ResponseInputItem {
         if (message.role === 'assistant') {
             return this.buildAssistantMessage(message.content);
         }

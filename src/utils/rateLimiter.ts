@@ -72,7 +72,7 @@ export class RateLimiter {
         currentQueueSize: 0,
         requestsThisMinute: 0,
         tokensThisMinute: 0,
-        rateLimitHits: 0
+        rateLimitHits: 0,
     };
     private minuteStartTime: number = Date.now();
 
@@ -81,7 +81,7 @@ export class RateLimiter {
             requestsPerMinute: config.requestsPerMinute ?? 60,
             tokensPerMinute: config.tokensPerMinute ?? 100_000,
             maxQueueSize: config.maxQueueSize ?? 100,
-            throwOnLimit: config.throwOnLimit ?? false
+            throwOnLimit: config.throwOnLimit ?? false,
         };
 
         this.logger = logger ?? new Logger('RateLimiter');
@@ -91,7 +91,7 @@ export class RateLimiter {
             tokens: this.config.requestsPerMinute,
             maxTokens: this.config.requestsPerMinute,
             refillRate: this.config.requestsPerMinute / 60_000, // per ms
-            lastRefill: Date.now()
+            lastRefill: Date.now(),
         };
 
         // Initialize token bucket (TPM)
@@ -99,10 +99,12 @@ export class RateLimiter {
             tokens: this.config.tokensPerMinute,
             maxTokens: this.config.tokensPerMinute,
             refillRate: this.config.tokensPerMinute / 60_000, // per ms
-            lastRefill: Date.now()
+            lastRefill: Date.now(),
         };
 
-        this.logger.info(`RateLimiter initialized: ${this.config.requestsPerMinute} RPM, ${this.config.tokensPerMinute} TPM`);
+        this.logger.info(
+            `RateLimiter initialized: ${this.config.requestsPerMinute} RPM, ${this.config.tokensPerMinute} TPM`,
+        );
     }
 
     /**
@@ -113,7 +115,10 @@ export class RateLimiter {
         const elapsed = now - bucket.lastRefill;
         const refillAmount = elapsed * bucket.refillRate;
 
-        bucket.tokens = Math.min(bucket.maxTokens, bucket.tokens + refillAmount);
+        bucket.tokens = Math.min(
+            bucket.maxTokens,
+            bucket.tokens + refillAmount,
+        );
         bucket.lastRefill = now;
     }
 
@@ -124,7 +129,10 @@ export class RateLimiter {
         this.refillBucket(this.requestBucket);
         this.refillBucket(this.tokenBucket);
 
-        return this.requestBucket.tokens >= 1 && this.tokenBucket.tokens >= estimatedTokens;
+        return (
+            this.requestBucket.tokens >= 1 &&
+            this.tokenBucket.tokens >= estimatedTokens
+        );
     }
 
     /**
@@ -142,13 +150,17 @@ export class RateLimiter {
         this.refillBucket(this.requestBucket);
         this.refillBucket(this.tokenBucket);
 
-        const requestWait = this.requestBucket.tokens < 1
-            ? (1 - this.requestBucket.tokens) / this.requestBucket.refillRate
-            : 0;
+        const requestWait =
+            this.requestBucket.tokens < 1
+                ? (1 - this.requestBucket.tokens) /
+                  this.requestBucket.refillRate
+                : 0;
 
-        const tokenWait = this.tokenBucket.tokens < estimatedTokens
-            ? (estimatedTokens - this.tokenBucket.tokens) / this.tokenBucket.refillRate
-            : 0;
+        const tokenWait =
+            this.tokenBucket.tokens < estimatedTokens
+                ? (estimatedTokens - this.tokenBucket.tokens) /
+                  this.tokenBucket.refillRate
+                : 0;
 
         return Math.max(requestWait, tokenWait);
     }
@@ -195,9 +207,13 @@ export class RateLimiter {
                 }
             } else {
                 const waitTime = this.getWaitTime(request.estimatedTokens);
-                this.logger.debug(`Rate limited, waiting ${Math.ceil(waitTime)}ms`);
+                this.logger.debug(
+                    `Rate limited, waiting ${Math.ceil(waitTime)}ms`,
+                );
                 this.stats.rateLimitHits++;
-                await new Promise(resolve => setTimeout(resolve, Math.ceil(waitTime)));
+                await new Promise((resolve) =>
+                    setTimeout(resolve, Math.ceil(waitTime)),
+                );
             }
         }
 
@@ -209,7 +225,10 @@ export class RateLimiter {
      * @param fn - Function to execute
      * @param estimatedTokens - Estimated tokens for this request
      */
-    async execute<T>(fn: () => Promise<T>, estimatedTokens: number = 1000): Promise<T> {
+    async execute<T>(
+        fn: () => Promise<T>,
+        estimatedTokens: number = 1000,
+    ): Promise<T> {
         // Check if we can proceed immediately
         if (this.canProceed(estimatedTokens) && this.queue.length === 0) {
             this.consume(estimatedTokens);
@@ -221,7 +240,9 @@ export class RateLimiter {
         // Check queue size
         if (this.queue.length >= this.config.maxQueueSize) {
             if (this.config.throwOnLimit) {
-                throw new Error(`Rate limiter queue full (${this.config.maxQueueSize} requests)`);
+                throw new Error(
+                    `Rate limiter queue full (${this.config.maxQueueSize} requests)`,
+                );
             }
             // Wait for queue to clear
             this.logger.warn(`Queue full, waiting for space...`);
@@ -234,11 +255,13 @@ export class RateLimiter {
                 resolve,
                 reject,
                 estimatedTokens,
-                timestamp: Date.now()
+                timestamp: Date.now(),
             });
             this.stats.queuedRequests++;
             this.stats.currentQueueSize = this.queue.length;
-            this.logger.debug(`Request queued, queue size: ${this.queue.length}`);
+            this.logger.debug(
+                `Request queued, queue size: ${this.queue.length}`,
+            );
 
             // Start processing if not already
             this.processQueue();
@@ -260,7 +283,7 @@ export class RateLimiter {
         this.refillBucket(this.tokenBucket);
         return {
             requests: Math.floor(this.requestBucket.tokens),
-            tokens: Math.floor(this.tokenBucket.tokens)
+            tokens: Math.floor(this.tokenBucket.tokens),
         };
     }
 
@@ -278,7 +301,7 @@ export class RateLimiter {
             currentQueueSize: 0,
             requestsThisMinute: 0,
             tokensThisMinute: 0,
-            rateLimitHits: 0
+            rateLimitHits: 0,
         };
         this.logger.info('RateLimiter reset');
     }
@@ -324,7 +347,7 @@ export interface RateLimitedClient<T> {
 export function withRateLimit<T extends object>(
     client: T,
     config: RateLimiterConfig = {},
-    logger?: Logger
+    logger?: Logger,
 ): T & RateLimitedClient<T> {
     const rateLimiter = new RateLimiter(config, logger);
 
@@ -358,22 +381,34 @@ export function withRateLimit<T extends object>(
                 }
 
                 // Handle nested objects (like client.responses)
-                if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                if (
+                    typeof value === 'object' &&
+                    value !== null &&
+                    !Array.isArray(value)
+                ) {
                     return createProxy(value, [...path, prop]);
                 }
 
                 // Wrap async functions that likely make API calls
                 if (typeof value === 'function') {
                     // Only wrap methods that are likely API calls
-                    const apiMethods = ['create', 'retrieve', 'update', 'delete', 'list'];
+                    const apiMethods = [
+                        'create',
+                        'retrieve',
+                        'update',
+                        'delete',
+                        'list',
+                    ];
                     if (apiMethods.includes(prop)) {
                         return async (...args: any[]) => {
                             // Estimate tokens from the first argument (usually the request body)
-                            const estimatedTokens = args[0] ? estimateTokens(args[0]) : 1000;
+                            const estimatedTokens = args[0]
+                                ? estimateTokens(args[0])
+                                : 1000;
 
                             return rateLimiter.execute(
                                 () => value.apply(obj, args),
-                                estimatedTokens
+                                estimatedTokens,
                             );
                         };
                     }
@@ -383,7 +418,7 @@ export function withRateLimit<T extends object>(
                 }
 
                 return value;
-            }
+            },
         });
     };
 

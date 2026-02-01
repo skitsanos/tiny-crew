@@ -2,25 +2,23 @@
  * Memory system exports
  */
 
-// Main store
-export { MemoryStore } from './MemoryStore';
-export { default } from './MemoryStore';
-
 // Backends
 export { InMemoryBackend } from './backends/InMemoryBackend';
-export { JSONFileBackend } from './backends/JSONFileBackend';
 export type { JSONFileBackendConfig } from './backends/JSONFileBackend';
+export { JSONFileBackend } from './backends/JSONFileBackend';
+// Main store
+export { default, MemoryStore } from './MemoryStore';
 
 // Types
 export {
+    createMemoryItem,
+    estimateTokens,
+    type MemoryBackend,
+    MemoryEvent,
+    type MemoryEventPayload,
     type MemoryItem,
     type MemoryQuery,
     type MemorySetOptions,
     type MemoryStoreConfig,
-    type MemoryBackend,
-    type MemoryEventPayload,
-    MemoryEvent,
-    createMemoryItem,
-    estimateTokens,
-    scoreItemByKeywords
+    scoreItemByKeywords,
 } from './types';

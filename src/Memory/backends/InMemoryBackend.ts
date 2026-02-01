@@ -16,7 +16,10 @@ export class InMemoryBackend implements MemoryBackend {
         return this.getOrCreateCrewMemory(crewId);
     }
 
-    async save(_crewId: string, _memory: Map<string, MemoryItem>): Promise<void> {
+    async save(
+        _crewId: string,
+        _memory: Map<string, MemoryItem>,
+    ): Promise<void> {
         // In-memory backend doesn't need explicit save - data is already in memory
         // This is a no-op for compatibility with the interface
     }
@@ -57,7 +60,11 @@ export class InMemoryBackend implements MemoryBackend {
 
         for (const item of crewMemory.values()) {
             // Skip expired items unless explicitly requested
-            if (!filter.includeExpired && item.expiresAt && item.expiresAt < now) {
+            if (
+                !filter.includeExpired &&
+                item.expiresAt &&
+                item.expiresAt < now
+            ) {
                 continue;
             }
 
@@ -70,7 +77,11 @@ export class InMemoryBackend implements MemoryBackend {
         }
 
         // Sort results (pass relevanceKeywords for keyword-aware sorting)
-        results = this.sortResults(results, filter.sortBy ?? 'recency', filter.relevanceKeywords);
+        results = this.sortResults(
+            results,
+            filter.sortBy ?? 'recency',
+            filter.relevanceKeywords,
+        );
 
         // Limit results
         if (filter.maxItems && results.length > filter.maxItems) {
@@ -123,8 +134,8 @@ export class InMemoryBackend implements MemoryBackend {
 
         // Filter by tags (any match)
         if (filter.tags && filter.tags.length > 0) {
-            const hasMatchingTag = filter.tags.some(tag =>
-                item.tags.includes(tag)
+            const hasMatchingTag = filter.tags.some((tag) =>
+                item.tags.includes(tag),
             );
             if (!hasMatchingTag) {
                 return false;
@@ -134,8 +145,8 @@ export class InMemoryBackend implements MemoryBackend {
         // Filter by keywords (any match in task or result)
         if (filter.keywords && filter.keywords.length > 0) {
             const searchText = `${item.task} ${item.result}`.toLowerCase();
-            const hasMatchingKeyword = filter.keywords.some(keyword =>
-                searchText.includes(keyword.toLowerCase())
+            const hasMatchingKeyword = filter.keywords.some((keyword) =>
+                searchText.includes(keyword.toLowerCase()),
             );
             if (!hasMatchingKeyword) {
                 return false;
@@ -154,7 +165,7 @@ export class InMemoryBackend implements MemoryBackend {
     private sortResults(
         items: MemoryItem[],
         sortBy: 'relevance' | 'recency' | 'accessCount',
-        relevanceKeywords?: string[]
+        relevanceKeywords?: string[],
     ): MemoryItem[] {
         switch (sortBy) {
             case 'recency':
@@ -167,8 +178,12 @@ export class InMemoryBackend implements MemoryBackend {
                 // Score by keyword matches + recency + access count
                 return items.sort((a, b) => {
                     // Keyword score (if keywords provided)
-                    const keywordScoreA = relevanceKeywords ? scoreItemByKeywords(a, relevanceKeywords) : 0;
-                    const keywordScoreB = relevanceKeywords ? scoreItemByKeywords(b, relevanceKeywords) : 0;
+                    const keywordScoreA = relevanceKeywords
+                        ? scoreItemByKeywords(a, relevanceKeywords)
+                        : 0;
+                    const keywordScoreB = relevanceKeywords
+                        ? scoreItemByKeywords(b, relevanceKeywords)
+                        : 0;
 
                     // If keyword scores differ significantly, use that
                     if (Math.abs(keywordScoreA - keywordScoreB) >= 2) {
@@ -176,12 +191,12 @@ export class InMemoryBackend implements MemoryBackend {
                     }
 
                     // Otherwise fall back to recency + access count
-                    const baseScoreA = a.accessCount + (a.createdAt / 1000000000);
-                    const baseScoreB = b.accessCount + (b.createdAt / 1000000000);
+                    const baseScoreA = a.accessCount + a.createdAt / 1000000000;
+                    const baseScoreB = b.accessCount + b.createdAt / 1000000000;
 
                     // Combine: keyword score weighted heavily + base score as tie-breaker
-                    const totalA = (keywordScoreA * 1000) + baseScoreA;
-                    const totalB = (keywordScoreB * 1000) + baseScoreB;
+                    const totalA = keywordScoreA * 1000 + baseScoreA;
+                    const totalB = keywordScoreB * 1000 + baseScoreB;
                     return totalB - totalA;
                 });
 

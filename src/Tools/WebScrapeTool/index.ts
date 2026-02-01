@@ -1,9 +1,26 @@
-import { JSDOM } from 'jsdom';
-import * as cheerio from 'cheerio';
-import type {CheerioAPI} from 'cheerio';
-import type {Element as DomElement} from 'domhandler';
-import type { Tool, ToolSchema } from '@/utils/types.ts';
 import Logger from '@/utils/logger.ts';
+import type { Tool, ToolSchema } from '@/utils/types.ts';
+
+// Optional dependencies - loaded dynamically
+let JSDOM: typeof import('jsdom').JSDOM | null = null;
+let cheerio: typeof import('cheerio') | null = null;
+
+// Type imports for cheerio
+type CheerioAPI = import('cheerio').CheerioAPI;
+type DomElement = import('domhandler').Element;
+
+// Try to load optional dependencies
+try {
+    JSDOM = (await import('jsdom')).JSDOM;
+} catch {
+    // jsdom not available
+}
+
+try {
+    cheerio = await import('cheerio');
+} catch {
+    // cheerio not available
+}
 
 interface WebScrapeArgs {
     url: string;
@@ -17,9 +34,10 @@ interface WebScrapeArgs {
 /**
  * WebScrapeTool for retrieving content from websites using native fetch API
  */
- export class WebScrapeTool implements Tool {
+export class WebScrapeTool implements Tool {
     public readonly name = 'WebScrape';
-    public readonly description = 'Scrape content from websites with various extraction options';
+    public readonly description =
+        'Scrape content from websites with various extraction options';
     private readonly logger: Logger;
     private readonly allowedDomains: string[] | null;
     private readonly blockedDomains: string[];
@@ -27,23 +45,31 @@ interface WebScrapeArgs {
     private readonly defaultTimeout: number;
     private readonly defaultUserAgent: string;
 
-    constructor(options: {
-        allowedDomains?: string[];
-        blockedDomains?: string[];
-        maxResponseSize?: number;
-        defaultTimeout?: number;
-        defaultUserAgent?: string;
-        logger?: Logger;
-    } = {}) {
+    constructor(
+        options: {
+            allowedDomains?: string[];
+            blockedDomains?: string[];
+            maxResponseSize?: number;
+            defaultTimeout?: number;
+            defaultUserAgent?: string;
+            logger?: Logger;
+        } = {},
+    ) {
         // If allowedDomains is provided, only these domains are allowed
         // If null, all domains are allowed except those in blockedDomains
         this.allowedDomains = options.allowedDomains || null;
         this.blockedDomains = options.blockedDomains || [
-            'localhost', '127.0.0.1', '0.0.0.0', 'internal', 'private', 'local'
+            'localhost',
+            '127.0.0.1',
+            '0.0.0.0',
+            'internal',
+            'private',
+            'local',
         ];
         this.maxResponseSize = options.maxResponseSize || 5 * 1024 * 1024; // 5MB default
         this.defaultTimeout = options.defaultTimeout || 10000; // 10 seconds
-        this.defaultUserAgent = options.defaultUserAgent ||
+        this.defaultUserAgent =
+            options.defaultUserAgent ||
             'Mozilla/5.0 (compatible; TinyCrewBot/1.0; +https://github.com/skitsanos/tiny-crew)';
         this.logger = options.logger || new Logger('WebScrapeTool');
     }
@@ -56,37 +82,53 @@ interface WebScrapeArgs {
             properties: {
                 url: {
                     type: 'string',
-                    description: 'The URL to scrape content from'
+                    description: 'The URL to scrape content from',
                 },
                 selector: {
                     type: 'string',
-                    description: 'CSS selector to extract specific elements. Use "body" or "*" for all content if no specific selector needed.',
-                    default: 'body'
+                    description:
+                        'CSS selector to extract specific elements. Use "body" or "*" for all content if no specific selector needed.',
+                    default: 'body',
                 },
                 type: {
                     type: 'string',
-                    enum: ['text', 'html', 'table', 'links', 'images', 'metadata'],
+                    enum: [
+                        'text',
+                        'html',
+                        'table',
+                        'links',
+                        'images',
+                        'metadata',
+                    ],
                     description: 'Type of content to extract',
-                    default: 'text'
+                    default: 'text',
                 },
                 parseDom: {
                     type: 'boolean',
                     description: 'Whether to parse the page using DOM',
-                    default: false
+                    default: false,
                 },
                 timeout: {
                     type: 'number',
                     description: 'Request timeout in milliseconds',
-                    default: 10000
+                    default: 10000,
                 },
                 userAgent: {
                     type: 'string',
                     description: 'Custom User-Agent string',
-                    default: 'Mozilla/5.0 (compatible; TinyCrewBot/1.0; +https://github.com/skitsanos/tiny-crew)'
-                }
+                    default:
+                        'Mozilla/5.0 (compatible; TinyCrewBot/1.0; +https://github.com/skitsanos/tiny-crew)',
+                },
             },
-            required: ['url', 'selector', 'type', 'parseDom', 'timeout', 'userAgent']
-        }
+            required: [
+                'url',
+                'selector',
+                'type',
+                'parseDom',
+                'timeout',
+                'userAgent',
+            ],
+        },
     };
 
     /**
@@ -107,7 +149,10 @@ interface WebScrapeArgs {
 
             // Check for blocked domains
             for (const blockedDomain of this.blockedDomains) {
-                if (hostname === blockedDomain || hostname.endsWith(`.${blockedDomain}`)) {
+                if (
+                    hostname === blockedDomain ||
+                    hostname.endsWith(`.${blockedDomain}`)
+                ) {
                     this.logger.warn(`Blocked domain: ${hostname}`);
                     return false;
                 }
@@ -115,8 +160,9 @@ interface WebScrapeArgs {
 
             // If allowedDomains is set, check if the domain is allowed
             if (this.allowedDomains !== null) {
-                const isAllowed = this.allowedDomains.some(domain =>
-                    hostname === domain || hostname.endsWith(`.${domain}`)
+                const isAllowed = this.allowedDomains.some(
+                    (domain) =>
+                        hostname === domain || hostname.endsWith(`.${domain}`),
                 );
 
                 if (!isAllowed) {
@@ -145,7 +191,12 @@ interface WebScrapeArgs {
             return false;
         }
 
-        if (args.type && !['text', 'html', 'table', 'links', 'images', 'metadata'].includes(args.type)) {
+        if (
+            args.type &&
+            !['text', 'html', 'table', 'links', 'images', 'metadata'].includes(
+                args.type,
+            )
+        ) {
             this.logger.warn(`Invalid type: ${args.type}`);
             return false;
         }
@@ -161,9 +212,40 @@ interface WebScrapeArgs {
     }
 
     /**
+     * Check if required dependencies are available
+     */
+    private checkDependencies(requireJsdom: boolean = false): void {
+        if (!cheerio) {
+            throw new Error(
+                'WebScrapeTool requires cheerio. Install it with: bun add cheerio',
+            );
+        }
+        if (requireJsdom && !JSDOM) {
+            throw new Error(
+                'WebScrapeTool with parseDom=true requires jsdom. Install it with: bun add jsdom',
+            );
+        }
+    }
+
+    /**
+     * Check if WebScrapeTool dependencies are available
+     */
+    public static isAvailable(): { available: boolean; missing: string[] } {
+        const missing: string[] = [];
+        if (!cheerio) missing.push('cheerio');
+        if (!JSDOM) missing.push('jsdom');
+        return {
+            available: cheerio !== null,
+            missing,
+        };
+    }
+
+    /**
      * Extract metadata from the HTML document
      */
-    private extractMetadata(dom: JSDOM): Record<string, string> {
+    private extractMetadata(
+        dom: InstanceType<typeof import('jsdom').JSDOM>,
+    ): Record<string, string> {
         const metadata: Record<string, string> = {};
         const document = dom.window.document;
 
@@ -174,7 +256,8 @@ interface WebScrapeArgs {
         // Extract meta tags
         const metaTags = document.querySelectorAll('meta');
         metaTags.forEach((meta: Element) => {
-            const name = meta.getAttribute('name') || meta.getAttribute('property');
+            const name =
+                meta.getAttribute('name') || meta.getAttribute('property');
             const content = meta.getAttribute('content');
             if (name && content) {
                 metadata[name] = content;
@@ -187,8 +270,11 @@ interface WebScrapeArgs {
     /**
      * Extract links from the HTML document
      */
-    private extractLinks($: CheerioAPI, baseUrl: string): Array<{text: string, url: string}> {
-        const links: Array<{text: string, url: string}> = [];
+    private extractLinks(
+        $: CheerioAPI,
+        baseUrl: string,
+    ): Array<{ text: string; url: string }> {
+        const links: Array<{ text: string; url: string }> = [];
         $('a[href]').each((_, element: DomElement) => {
             const linkElement = $(element);
             const href = linkElement.attr('href') || '';
@@ -198,7 +284,7 @@ interface WebScrapeArgs {
                 // Resolve relative URLs against the base URL
                 const url = new URL(href, baseUrl).href;
                 links.push({ text, url });
-            } catch (error) {
+            } catch (_error) {
                 this.logger.debug(`Skipping invalid URL: ${href}`);
             }
         });
@@ -209,8 +295,11 @@ interface WebScrapeArgs {
     /**
      * Extract images from the HTML document
      */
-    private extractImages($: CheerioAPI, baseUrl: string): Array<{alt: string, url: string}> {
-        const images: Array<{alt: string, url: string}> = [];
+    private extractImages(
+        $: CheerioAPI,
+        baseUrl: string,
+    ): Array<{ alt: string; url: string }> {
+        const images: Array<{ alt: string; url: string }> = [];
 
         $('img[src]').each((_, element: DomElement) => {
             const imgElement = $(element);
@@ -221,7 +310,7 @@ interface WebScrapeArgs {
                 // Resolve relative URLs against the base URL
                 const url = new URL(src, baseUrl).href;
                 images.push({ alt, url });
-            } catch (error) {
+            } catch (_error) {
                 this.logger.debug(`Skipping invalid image URL: ${src}`);
             }
         });
@@ -238,18 +327,22 @@ interface WebScrapeArgs {
         $('table').each((_, tableEl: DomElement) => {
             const table: Array<Array<string>> = [];
 
-            $(tableEl).find('tr').each((_, rowEl: DomElement) => {
-                const row: Array<string> = [];
+            $(tableEl)
+                .find('tr')
+                .each((_, rowEl: DomElement) => {
+                    const row: Array<string> = [];
 
-                // Handle both th and td cells
-                $(rowEl).find('th, td').each((_, cellEl: DomElement) => {
-                    row.push($(cellEl).text().trim());
+                    // Handle both th and td cells
+                    $(rowEl)
+                        .find('th, td')
+                        .each((_, cellEl: DomElement) => {
+                            row.push($(cellEl).text().trim());
+                        });
+
+                    if (row.length > 0) {
+                        table.push(row);
+                    }
                 });
-
-                if (row.length > 0) {
-                    table.push(row);
-                }
-            });
 
             if (table.length > 0) {
                 tables.push(table);
@@ -262,7 +355,10 @@ interface WebScrapeArgs {
     /**
      * Creates an AbortController and sets a timeout
      */
-    private createTimeoutController(timeout: number): { controller: AbortController, signal: AbortSignal } {
+    private createTimeoutController(timeout: number): {
+        controller: AbortController;
+        signal: AbortSignal;
+    } {
         const controller = new AbortController();
         const signal = controller.signal;
 
@@ -282,11 +378,23 @@ interface WebScrapeArgs {
         type = 'text',
         parseDom = false,
         timeout = this.defaultTimeout,
-        userAgent = this.defaultUserAgent
+        userAgent = this.defaultUserAgent,
     }: WebScrapeArgs): Promise<any> {
         this.logger.debug(`Scraping URL: ${url}`);
 
-        if (!this.validateInput({ url, selector, type, parseDom, timeout, userAgent })) {
+        // Check dependencies are available
+        this.checkDependencies(parseDom);
+
+        if (
+            !this.validateInput({
+                url,
+                selector,
+                type,
+                parseDom,
+                timeout,
+                userAgent,
+            })
+        ) {
             throw new Error(`Invalid scraping request for URL: ${url}`);
         }
 
@@ -298,26 +406,33 @@ interface WebScrapeArgs {
             // Configure request headers
             const headers = new Headers({
                 'User-Agent': userAgent || this.defaultUserAgent,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5'
+                Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
             });
 
             // Make the HTTP request
             const response = await fetch(url, {
                 headers,
                 signal,
-                redirect: 'follow'
+                redirect: 'follow',
             });
 
             // Check response status
             if (!response.ok) {
-                throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+                throw new Error(
+                    `HTTP error ${response.status}: ${response.statusText}`,
+                );
             }
 
             // Check content length if available
             const contentLength = response.headers.get('content-length');
-            if (contentLength && parseInt(contentLength) > this.maxResponseSize) {
-                throw new Error(`Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`);
+            if (
+                contentLength &&
+                parseInt(contentLength, 10) > this.maxResponseSize
+            ) {
+                throw new Error(
+                    `Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`,
+                );
             }
 
             // Get response text
@@ -325,7 +440,9 @@ interface WebScrapeArgs {
 
             // Check actual content size
             if (html.length > this.maxResponseSize) {
-                throw new Error(`Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`);
+                throw new Error(
+                    `Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`,
+                );
             }
 
             const finalUrl = response.url || url;
@@ -333,7 +450,7 @@ interface WebScrapeArgs {
             // Load the HTML content with appropriate parser
             if (parseDom) {
                 // Use JSDOM for full DOM support (heavier but more accurate)
-                const dom = new JSDOM(html, { url: finalUrl });
+                const dom = new JSDOM!(html, { url: finalUrl });
 
                 if (type === 'metadata') {
                     return this.extractMetadata(dom);
@@ -342,12 +459,17 @@ interface WebScrapeArgs {
                 const document = dom.window.document;
 
                 if (selector) {
-                    const selectedElements = document.querySelectorAll(selector);
+                    const selectedElements =
+                        document.querySelectorAll(selector);
 
                     if (type === 'text') {
-                        return Array.from(selectedElements).map((el: Element) => el.textContent?.trim()).filter(Boolean);
+                        return Array.from(selectedElements)
+                            .map((el: Element) => el.textContent?.trim())
+                            .filter(Boolean);
                     } else if (type === 'html') {
-                        return Array.from(selectedElements).map((el: Element) => (el as HTMLElement).outerHTML).filter(Boolean);
+                        return Array.from(selectedElements)
+                            .map((el: Element) => (el as HTMLElement).outerHTML)
+                            .filter(Boolean);
                     }
                 } else {
                     if (type === 'text') {
@@ -358,7 +480,7 @@ interface WebScrapeArgs {
                 }
             } else {
                 // Use Cheerio for faster parsing (lighter weight)
-                const $ = cheerio.load(html);
+                const $ = cheerio!.load(html);
 
                 if (type === 'links') {
                     return this.extractLinks($, finalUrl);
@@ -376,7 +498,9 @@ interface WebScrapeArgs {
                     const elements = $(selector);
 
                     if (type === 'text') {
-                        return elements.map((_, el) => $(el).text().trim()).get();
+                        return elements
+                            .map((_, el) => $(el).text().trim())
+                            .get();
                     } else if (type === 'html') {
                         return elements.map((_, el) => $.html(el)).get();
                     }
@@ -389,16 +513,25 @@ interface WebScrapeArgs {
                 }
             }
 
-            throw new Error(`Unsupported combination of type: ${type} and parseDom: ${parseDom}`);
-        } catch (error:any) {
+            throw new Error(
+                `Unsupported combination of type: ${type} and parseDom: ${parseDom}`,
+            );
+        } catch (error: any) {
             this.logger.error(`Error scraping ${url}: ${error}`);
 
             // Enhance error information based on the error type
             if (error instanceof TypeError && error.message.includes('fetch')) {
-                throw new Error(`Network error while fetching ${url}: ${error.message}`);
+                throw new Error(
+                    `Network error while fetching ${url}: ${error.message}`,
+                );
             } else if (error.name === 'AbortError') {
-                throw new Error(`Request timeout after ${timeout || this.defaultTimeout}ms`);
-            } else if (error instanceof DOMException && error.name === 'SyntaxError') {
+                throw new Error(
+                    `Request timeout after ${timeout || this.defaultTimeout}ms`,
+                );
+            } else if (
+                error instanceof DOMException &&
+                error.name === 'SyntaxError'
+            ) {
                 throw new Error(`Error parsing HTML from ${url}`);
             }
 
