@@ -6,6 +6,7 @@ Welcome to the TinyCrew documentation. TinyCrew is a TypeScript framework for bu
 
 | Guide | Description |
 |-------|-------------|
+| [Overview](./overview.md) | Introduction, architecture, and key features |
 | [Getting Started](./getting-started.md) | Installation, configuration, and first steps |
 | [Memory System](./memory-system.md) | Knowledge sharing between agents |
 | [Multi-Model Routing](./multi-model-routing.md) | Cost optimization with model routing |
