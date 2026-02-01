@@ -14,6 +14,7 @@ Welcome to the TinyCrew documentation. TinyCrew is a TypeScript framework for bu
 | [Agent Messaging](./agent-messaging.md) | Agent-to-agent communication |
 | [Memory Tools](./memory-tools.md) | Tools for agent memory management |
 | [Custom Tools](./custom-tools.md) | Creating your own tools |
+| [Advanced Patterns](./advanced-patterns.md) | Persona agents, behavioral modeling, structured protocols |
 | [Use Cases](./use-cases.md) | Practical implementation scenarios |
 
 ## Core Concepts

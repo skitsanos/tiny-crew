@@ -91,6 +91,7 @@ Full documentation is available in the [docs/](./docs/) folder:
 | [Agent Messaging](./docs/agent-messaging.md) | Agent-to-agent communication |
 | [Memory Tools](./docs/memory-tools.md) | Tools for agent memory management |
 | [Custom Tools](./docs/custom-tools.md) | Creating your own tools |
+| [Advanced Patterns](./docs/advanced-patterns.md) | Persona agents, behavioral modeling, structured protocols |
 | [Use Cases](./docs/use-cases.md) | Practical implementation scenarios |
 
 ## Examples
