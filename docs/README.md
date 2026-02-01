@@ -12,9 +12,11 @@ Welcome to the TinyCrew documentation. TinyCrew is a TypeScript framework for bu
 | [Conversation History](./conversation-history.md) | Multi-turn conversations and summarization |
 | [Response Streaming](./streaming.md) | Real-time response streaming |
 | [Agent Messaging](./agent-messaging.md) | Agent-to-agent communication |
+| [Structured Output](./structured-output.md) | Type-safe JSON responses with Zod schemas |
 | [Memory Tools](./memory-tools.md) | Tools for agent memory management |
 | [Custom Tools](./custom-tools.md) | Creating your own tools |
 | [Advanced Patterns](./advanced-patterns.md) | Persona agents, behavioral modeling, structured protocols |
+| [Testing Guide](./testing.md) | Mock clients and testing patterns |
 | [Use Cases](./use-cases.md) | Practical implementation scenarios |
 
 ## Core Concepts
@@ -106,6 +108,10 @@ interface AgentConfig {
     systemPrompt?: string;           // Custom system prompt
     capabilities?: string[];         // Agent capabilities
     preferredModel?: string;         // Override model for this agent
+    responseSchema?: {               // Structured output with Zod schema
+        schema: ZodSchema;           // Zod schema for response validation
+        name: string;                // Schema name for the API
+    };
 }
 ```
 
@@ -193,6 +199,28 @@ Test files:
 - `tests/agent-summarization.test.ts` - Summarization tests
 - `tests/model-router.test.ts` - Model routing tests
 - `tests/rate-limiter.test.ts` - Rate limiter tests
+- `tests/structured-output.test.ts` - Structured output with Zod schemas
+- `tests/orchestration.test.ts` - Multi-agent orchestration patterns
+- `tests/memory.test.ts` - Memory system tests
+- `tests/fileWriteTool.test.ts` - File write tool tests
+- `tests/webscrapper.test.ts` - Web scraper tool tests
+
+### Mock Client Utility
+
+For testing without API calls, use the mock OpenAI client:
+
+```typescript
+import { createMockOpenAIClient } from './tests/utils/mock-openai';
+
+const { client, stats } = createMockOpenAIClient({
+    responses: ['Hello!', 'How can I help?']
+});
+
+const agent = new Agent({ name: 'Test', goal: 'Test' }, client);
+await agent.chat('Hi'); // Returns 'Hello!'
+
+expect(stats.totalCalls).toBe(1);
+```
 
 ## Contributing
 

@@ -7,6 +7,7 @@ TinyCrew is a TypeScript framework that orchestrates multiple AI agents to solve
 - **Multi-Agent Orchestration** - Specialized agents with distinct goals working together
 - **Shared Memory** - Knowledge transfer and persistence between agents
 - **Tool Integration** - Extensible system using OpenAI Responses API
+- **Structured Output** - Type-safe JSON responses with Zod schema validation
 - **Conversation Management** - Multi-turn history with automatic summarization
 - **Response Streaming** - Real-time response delivery
 - **Agent Messaging** - Direct agent-to-agent communication
@@ -89,9 +90,11 @@ Full documentation is available in the [docs/](./docs/) folder:
 | [Conversation History](./docs/conversation-history.md) | Multi-turn conversations and summarization |
 | [Response Streaming](./docs/streaming.md) | Real-time response streaming |
 | [Agent Messaging](./docs/agent-messaging.md) | Agent-to-agent communication |
+| [Structured Output](./docs/structured-output.md) | Type-safe JSON responses with Zod schemas |
 | [Memory Tools](./docs/memory-tools.md) | Tools for agent memory management |
 | [Custom Tools](./docs/custom-tools.md) | Creating your own tools |
 | [Advanced Patterns](./docs/advanced-patterns.md) | Persona agents, behavioral modeling, structured protocols |
+| [Testing Guide](./docs/testing.md) | Mock clients and testing patterns |
 | [Use Cases](./docs/use-cases.md) | Practical implementation scenarios |
 
 ## Examples
