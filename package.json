@@ -1,6 +1,6 @@
 {
   "name": "tiny-crew",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "module": "src/index.ts",
   "type": "module",
   "devDependencies": {
@@ -15,6 +15,7 @@
     "cheerio": "^1.2.0",
     "dayjs": "^1.11.19",
     "dedent": "^1.7.1",
-    "jsdom": "^27.4.0"
+    "jsdom": "^27.4.0",
+    "zod": "^4.3.6"
   }
 }

@@ -1,49 +1,60 @@
-# Tiny Crew Documentation
+# TinyCrew Documentation
 
-Welcome to the Tiny Crew documentation. Tiny Crew is a TypeScript framework for building multi-agent AI systems using OpenAI's API.
+Welcome to the TinyCrew documentation. TinyCrew is a TypeScript framework for building multi-agent AI systems using OpenAI's API.
 
-## Core Features
+## Quick Links
 
-### [Conversation History Management](./conversation-history.md)
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](./getting-started.md) | Installation, configuration, and first steps |
+| [Memory System](./memory-system.md) | Knowledge sharing between agents |
+| [Multi-Model Routing](./multi-model-routing.md) | Cost optimization with model routing |
+| [Conversation History](./conversation-history.md) | Multi-turn conversations and summarization |
+| [Response Streaming](./streaming.md) | Real-time response streaming |
+| [Agent Messaging](./agent-messaging.md) | Agent-to-agent communication |
+| [Memory Tools](./memory-tools.md) | Tools for agent memory management |
+| [Custom Tools](./custom-tools.md) | Creating your own tools |
+| [Use Cases](./use-cases.md) | Practical implementation scenarios |
 
-Maintain context across multi-turn conversations with automatic history management.
+## Core Concepts
 
-- `chat()` method for easy conversations
-- Configurable history limits
-- **Automatic summarization** of old messages
-- History persistence and restoration
-- Events for monitoring changes
+### Agents
 
-### [Response Streaming](./streaming.md)
+Specialized AI assistants with distinct goals, capabilities, and tools. Each agent focuses on specific tasks like research, analysis, or writing.
 
-Stream responses in real-time for better user experience.
+```typescript
+const agent = new Agent({
+    name: 'Researcher',
+    goal: 'Find and analyze information',
+    capabilities: ['research', 'analysis']
+}, openai);
+```
 
-- `chatStream()` for streaming with history
-- `performTaskStream()` for low-level control
-- Support for tool calls during streaming
-- Events for progress monitoring
+### Crews
 
-### [Agent-to-Agent Messaging](./agent-messaging.md)
+Coordinators that orchestrate multiple agents to achieve a common goal. The crew assigns tasks to appropriate agents and synthesizes results.
 
-Enable agents to communicate and collaborate.
+```typescript
+const crew = new Crew({
+    goal: 'Produce a comprehensive market report'
+}, openai);
 
-- `MessageBus` for pub/sub messaging
-- Request-response patterns
-- Message queuing for offline agents
-- Broadcast and multi-cast support
+crew.addAgent(researcher);
+crew.addAgent(analyst);
+crew.addAgent(writer);
+```
 
-### [Memory Tools](./memory-tools.md)
+### Memory
 
-Allow agents to manage their own persistent memory.
+Shared knowledge store that enables agents to build on each other's work. Supports both in-memory and persistent storage.
 
-- Core memory append and replace operations
-- Long-term archival memory storage
-- Semantic search for stored information
-- Access control for memory blocks
+### Tools
 
-## Quick Reference
+Extensions that allow agents to interact with external services, files, and APIs.
 
-### Agent Methods
+## Agent API Reference
+
+### Methods
 
 | Method | Description |
 |--------|-------------|
@@ -97,42 +108,61 @@ interface AgentConfig {
 }
 ```
 
-## Installation
+## Crew API Reference
 
-```bash
-bun add tiny-crew
-```
+### Methods
 
-## Basic Example
+| Method | Description |
+|--------|-------------|
+| `addAgent(agent)` | Add an agent to the crew |
+| `addTask(description)` | Add a task to the queue |
+| `executeAllTasks()` | Execute all tasks sequentially |
+| `executeTasksInParallel()` | Execute tasks in parallel |
+| `achieveCrewGoal()` | Generate final summary |
+| `provideFinalResponse(prompt)` | Generate custom final response |
+
+### Events
+
+| Event | Description |
+|-------|-------------|
+| `TASK_ASSIGNED` | Task assigned to an agent |
+| `TASK_COMPLETED` | Task completed |
+| `MEMORY_UPDATED` | Shared memory updated |
+| `GOAL_ACHIEVED` | Crew goal achieved |
+
+## Examples
+
+### Simple Conversation
 
 ```typescript
-import { Agent } from 'tiny-crew/Agent';
-import OpenAI from 'openai';
-
 const agent = new Agent({
     name: 'Assistant',
     goal: 'Help users with their questions'
 }, new OpenAI());
 
-// Simple conversation
 const response = await agent.chat('Hello, how are you?');
-console.log(response);
-
-// Follow-up with context
 const followUp = await agent.chat('What can you help me with?');
-console.log(followUp);
 ```
 
-## Multi-Agent Example
+### Multi-Agent Collaboration
 
 ```typescript
-import { Agent } from 'tiny-crew/Agent';
-import { MessageBus } from 'tiny-crew/Agent/MessageBus';
-import OpenAI from 'openai';
+const crew = new Crew({ goal: 'Research and report on AI trends' }, openai);
 
-const client = new OpenAI();
+crew.addAgent(new Agent({ name: 'Researcher', goal: 'Find information' }, openai));
+crew.addAgent(new Agent({ name: 'Writer', goal: 'Create reports' }, openai));
+
+crew.addTask('Research recent AI developments');
+crew.addTask('Write a summary report');
+
+await crew.executeAllTasks();
+const report = await crew.achieveCrewGoal();
+```
+
+### Agent Messaging
+
+```typescript
 const bus = new MessageBus();
-
 const coordinator = new Agent({ name: 'Coordinator', goal: 'Manage workflow' }, client);
 const worker = new Agent({ name: 'Worker', goal: 'Execute tasks' }, client);
 
@@ -145,7 +175,6 @@ worker.onMessage(async (ctx) => {
 });
 
 const response = await coordinator.sendMessageAndWait('Worker', 'Analyze this data');
-console.log(response.content);
 ```
 
 ## Testing
@@ -161,6 +190,8 @@ Test files:
 - `tests/agent-streaming.test.ts` - Streaming tests
 - `tests/agent-messaging.test.ts` - Messaging tests
 - `tests/agent-summarization.test.ts` - Summarization tests
+- `tests/model-router.test.ts` - Model routing tests
+- `tests/rate-limiter.test.ts` - Rate limiter tests
 
 ## Contributing
 
@@ -168,3 +199,7 @@ Test files:
 2. Make changes with tests
 3. Run `bun test` to verify
 4. Submit a pull request
+
+## License
+
+MIT License
