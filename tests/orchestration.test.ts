@@ -39,13 +39,13 @@ class TeamCommunicator {
     createSBAR(
         from: string,
         to: string,
-        sbar: Omit<SBARMessage, 'from' | 'to' | 'timestamp'>
+        sbar: Omit<SBARMessage, 'from' | 'to' | 'timestamp'>,
     ): SBARMessage {
         const message: SBARMessage = {
             from,
             to,
             timestamp: new Date().toISOString(),
-            ...sbar
+            ...sbar,
         };
 
         this.messageLog.push(message);
@@ -65,8 +65,8 @@ RECOMMENDATION: ${message.recommendation}`;
     }
 
     getMessagesFor(recipient: string): SBARMessage[] {
-        return this.messageLog.filter(m =>
-            m.to === recipient || m.to === 'all'
+        return this.messageLog.filter(
+            (m) => m.to === recipient || m.to === 'all',
         );
     }
 
@@ -93,7 +93,7 @@ describe('SBAR Communication Protocol', () => {
                 background: 'Running routine data validation',
                 assessment: 'Likely data entry errors in November',
                 recommendation: 'Request audit of November entries',
-                priority: 'urgent'
+                priority: 'urgent',
             });
 
             expect(message.from).toBe('Analyst');
@@ -108,7 +108,7 @@ describe('SBAR Communication Protocol', () => {
                 background: 'Test background',
                 assessment: 'Test assessment',
                 recommendation: 'Test recommendation',
-                priority: 'routine'
+                priority: 'routine',
             });
 
             communicator.createSBAR('Agent1', 'Agent2', {
@@ -116,7 +116,7 @@ describe('SBAR Communication Protocol', () => {
                 background: 'Second background',
                 assessment: 'Second assessment',
                 recommendation: 'Second recommendation',
-                priority: 'critical'
+                priority: 'critical',
             });
 
             const messages = communicator.getMessagesFor('Agent2');
@@ -129,7 +129,7 @@ describe('SBAR Communication Protocol', () => {
                 background: '',
                 assessment: '',
                 recommendation: '',
-                priority: 'routine'
+                priority: 'routine',
             });
 
             communicator.createSBAR('Agent1', 'Agent3', {
@@ -137,7 +137,7 @@ describe('SBAR Communication Protocol', () => {
                 background: '',
                 assessment: '',
                 recommendation: '',
-                priority: 'routine'
+                priority: 'routine',
             });
 
             const agent2Messages = communicator.getMessagesFor('Agent2');
@@ -154,7 +154,7 @@ describe('SBAR Communication Protocol', () => {
                 background: '',
                 assessment: '',
                 recommendation: '',
-                priority: 'routine'
+                priority: 'routine',
             });
 
             expect(communicator.getMessagesFor('Agent1').length).toBe(1);
@@ -169,7 +169,7 @@ describe('SBAR Communication Protocol', () => {
                 background: 'Q4 data validation in progress',
                 assessment: 'Data entry errors likely',
                 recommendation: 'Audit November entries',
-                priority: 'urgent'
+                priority: 'urgent',
             });
 
             const formatted = communicator.formatForAgent(message);
@@ -179,22 +179,32 @@ describe('SBAR Communication Protocol', () => {
             expect(formatted).toContain('SITUATION: Sales anomaly detected');
             expect(formatted).toContain('BACKGROUND: Q4 data validation');
             expect(formatted).toContain('ASSESSMENT: Data entry errors likely');
-            expect(formatted).toContain('RECOMMENDATION: Audit November entries');
+            expect(formatted).toContain(
+                'RECOMMENDATION: Audit November entries',
+            );
         });
 
         it('formats all priority levels correctly', () => {
             const routine = communicator.createSBAR('A', 'B', {
-                situation: '', background: '', assessment: '', recommendation: '',
-                priority: 'routine'
+                situation: '',
+                background: '',
+                assessment: '',
+                recommendation: '',
+                priority: 'routine',
             });
 
             const critical = communicator.createSBAR('A', 'B', {
-                situation: '', background: '', assessment: '', recommendation: '',
-                priority: 'critical'
+                situation: '',
+                background: '',
+                assessment: '',
+                recommendation: '',
+                priority: 'critical',
             });
 
             expect(communicator.formatForAgent(routine)).toContain('[ROUTINE]');
-            expect(communicator.formatForAgent(critical)).toContain('[CRITICAL]');
+            expect(communicator.formatForAgent(critical)).toContain(
+                '[CRITICAL]',
+            );
         });
     });
 });
@@ -241,7 +251,10 @@ class WorkflowOrchestrator {
         return this.currentPhase;
     }
 
-    async executePhase(phase: WorkflowPhase, context: string): Promise<string[]> {
+    async executePhase(
+        phase: WorkflowPhase,
+        context: string,
+    ): Promise<string[]> {
         this.currentPhase = phase;
         const agents = this.phaseAgents.get(phase) ?? [];
         const results: string[] = [];
@@ -255,7 +268,7 @@ class WorkflowOrchestrator {
                 agent: agent.getName(),
                 action: prompt.slice(0, 100),
                 result: result.slice(0, 500),
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
             });
 
             results.push(result);
@@ -271,7 +284,7 @@ class WorkflowOrchestrator {
             discussion: `Share your perspective on: ${context}`,
             consensus: `Identify areas of agreement and disagreement: ${context}`,
             planning: `Propose action items for: ${context}`,
-            execution: `Execute the plan: ${context}`
+            execution: `Execute the plan: ${context}`,
         };
         return prompts[phase];
     }
@@ -281,7 +294,7 @@ class WorkflowOrchestrator {
     }
 
     getEventsByPhase(phase: WorkflowPhase): PhaseEvent[] {
-        return this.events.filter(e => e.phase === phase);
+        return this.events.filter((e) => e.phase === phase);
     }
 
     getSummary(): string {
@@ -324,17 +337,28 @@ describe('Workflow Orchestration', () => {
     describe('agent registration', () => {
         it('registers agents for phases', () => {
             const { client } = createMockOpenAIClient({ responses: ['OK'] });
-            const agent = new Agent({ name: 'Researcher', goal: 'Research' }, client);
+            const agent = new Agent(
+                { name: 'Researcher', goal: 'Research' },
+                client,
+            );
 
             orchestrator.registerAgent('discovery', agent);
 
-            expect(orchestrator.getAgentsForPhase('discovery')).toContain(agent);
+            expect(orchestrator.getAgentsForPhase('discovery')).toContain(
+                agent,
+            );
         });
 
         it('allows multiple agents per phase', () => {
             const { client } = createMockOpenAIClient({ responses: ['OK'] });
-            const agent1 = new Agent({ name: 'Analyst1', goal: 'Analyze' }, client);
-            const agent2 = new Agent({ name: 'Analyst2', goal: 'Analyze' }, client);
+            const agent1 = new Agent(
+                { name: 'Analyst1', goal: 'Analyze' },
+                client,
+            );
+            const agent2 = new Agent(
+                { name: 'Analyst2', goal: 'Analyze' },
+                client,
+            );
 
             orchestrator.registerAgent('analysis', agent1);
             orchestrator.registerAgent('analysis', agent2);
@@ -345,12 +369,17 @@ describe('Workflow Orchestration', () => {
 
         it('registers same agent for multiple phases', () => {
             const { client } = createMockOpenAIClient({ responses: ['OK'] });
-            const agent = new Agent({ name: 'Generalist', goal: 'Help' }, client);
+            const agent = new Agent(
+                { name: 'Generalist', goal: 'Help' },
+                client,
+            );
 
             orchestrator.registerAgent('discovery', agent);
             orchestrator.registerAgent('planning', agent);
 
-            expect(orchestrator.getAgentsForPhase('discovery')).toContain(agent);
+            expect(orchestrator.getAgentsForPhase('discovery')).toContain(
+                agent,
+            );
             expect(orchestrator.getAgentsForPhase('planning')).toContain(agent);
         });
     });
@@ -358,13 +387,19 @@ describe('Workflow Orchestration', () => {
     describe('phase execution', () => {
         it('executes a single phase', async () => {
             const { client, stats } = createMockOpenAIClient({
-                responses: ['Discovery findings: key trends identified']
+                responses: ['Discovery findings: key trends identified'],
             });
 
-            const researcher = new Agent({ name: 'Researcher', goal: 'Research' }, client);
+            const researcher = new Agent(
+                { name: 'Researcher', goal: 'Research' },
+                client,
+            );
             orchestrator.registerAgent('discovery', researcher);
 
-            const results = await orchestrator.executePhase('discovery', 'AI trends');
+            const results = await orchestrator.executePhase(
+                'discovery',
+                'AI trends',
+            );
 
             expect(results.length).toBe(1);
             expect(results[0]).toContain('Discovery findings');
@@ -384,10 +419,13 @@ describe('Workflow Orchestration', () => {
 
         it('logs phase events', async () => {
             const { client } = createMockOpenAIClient({
-                responses: ['Analysis complete']
+                responses: ['Analysis complete'],
             });
 
-            const analyst = new Agent({ name: 'Analyst', goal: 'Analyze' }, client);
+            const analyst = new Agent(
+                { name: 'Analyst', goal: 'Analyze' },
+                client,
+            );
             orchestrator.registerAgent('analysis', analyst);
 
             await orchestrator.executePhase('analysis', 'test data');
@@ -401,16 +439,25 @@ describe('Workflow Orchestration', () => {
 
         it('executes multiple agents in sequence', async () => {
             const { client, stats } = createMockOpenAIClient({
-                responses: ['Agent1 perspective', 'Agent2 perspective']
+                responses: ['Agent1 perspective', 'Agent2 perspective'],
             });
 
-            const agent1 = new Agent({ name: 'Agent1', goal: 'Discuss' }, client);
-            const agent2 = new Agent({ name: 'Agent2', goal: 'Discuss' }, client);
+            const agent1 = new Agent(
+                { name: 'Agent1', goal: 'Discuss' },
+                client,
+            );
+            const agent2 = new Agent(
+                { name: 'Agent2', goal: 'Discuss' },
+                client,
+            );
 
             orchestrator.registerAgent('discussion', agent1);
             orchestrator.registerAgent('discussion', agent2);
 
-            const results = await orchestrator.executePhase('discussion', 'topic');
+            const results = await orchestrator.executePhase(
+                'discussion',
+                'topic',
+            );
 
             expect(results.length).toBe(2);
             expect(stats.totalCalls).toBe(2);
@@ -424,12 +471,18 @@ describe('Workflow Orchestration', () => {
                     'Discovery: Found key insights',
                     'Analysis: Deep dive complete',
                     'Consensus: Team agrees',
-                    'Plan: Action items defined'
-                ]
+                    'Plan: Action items defined',
+                ],
             });
 
-            const researcher = new Agent({ name: 'Researcher', goal: 'Research' }, client);
-            const analyst = new Agent({ name: 'Analyst', goal: 'Analyze' }, client);
+            const researcher = new Agent(
+                { name: 'Researcher', goal: 'Research' },
+                client,
+            );
+            const analyst = new Agent(
+                { name: 'Analyst', goal: 'Analyze' },
+                client,
+            );
             const leader = new Agent({ name: 'Leader', goal: 'Lead' }, client);
 
             orchestrator.registerAgent('discovery', researcher);
@@ -437,10 +490,22 @@ describe('Workflow Orchestration', () => {
             orchestrator.registerAgent('consensus', leader);
             orchestrator.registerAgent('planning', leader);
 
-            const discoveries = await orchestrator.executePhase('discovery', 'market trends');
-            const analyses = await orchestrator.executePhase('analysis', discoveries.join('\n'));
-            const consensus = await orchestrator.executePhase('consensus', analyses.join('\n'));
-            const plan = await orchestrator.executePhase('planning', consensus.join('\n'));
+            const discoveries = await orchestrator.executePhase(
+                'discovery',
+                'market trends',
+            );
+            const analyses = await orchestrator.executePhase(
+                'analysis',
+                discoveries.join('\n'),
+            );
+            const consensus = await orchestrator.executePhase(
+                'consensus',
+                analyses.join('\n'),
+            );
+            const plan = await orchestrator.executePhase(
+                'planning',
+                consensus.join('\n'),
+            );
 
             expect(orchestrator.getEvents().length).toBe(4);
             expect(plan[0]).toContain('Plan');
@@ -448,7 +513,7 @@ describe('Workflow Orchestration', () => {
 
         it('generates workflow summary', async () => {
             const { client } = createMockOpenAIClient({
-                responses: ['Discovery result', 'Analysis result']
+                responses: ['Discovery result', 'Analysis result'],
             });
 
             const agent = new Agent({ name: 'Worker', goal: 'Work' }, client);
@@ -468,7 +533,7 @@ describe('Workflow Orchestration', () => {
 
         it('filters events by phase', async () => {
             const { client } = createMockOpenAIClient({
-                responses: ['D1', 'D2', 'A1']
+                responses: ['D1', 'D2', 'A1'],
             });
 
             const agent1 = new Agent({ name: 'Agent1', goal: 'Work' }, client);
@@ -527,46 +592,46 @@ const ARCHETYPES = {
             assertiveness: 0.5,
             riskTolerance: 0.3,
             detailOrientation: 0.9,
-            collaborativeness: 0.6
+            collaborativeness: 0.6,
         },
         personality: {
             openness: 0.7,
             conscientiousness: 0.9,
             extraversion: 0.3,
             agreeableness: 0.5,
-            neuroticism: 0.3
-        }
+            neuroticism: 0.3,
+        },
     },
     creative: {
         behavioral: {
             assertiveness: 0.6,
             riskTolerance: 0.8,
             detailOrientation: 0.4,
-            collaborativeness: 0.7
+            collaborativeness: 0.7,
         },
         personality: {
             openness: 0.95,
             conscientiousness: 0.4,
             extraversion: 0.7,
             agreeableness: 0.6,
-            neuroticism: 0.5
-        }
+            neuroticism: 0.5,
+        },
     },
     leader: {
         behavioral: {
             assertiveness: 0.85,
             riskTolerance: 0.6,
             detailOrientation: 0.5,
-            collaborativeness: 0.7
+            collaborativeness: 0.7,
         },
         personality: {
             openness: 0.6,
             conscientiousness: 0.8,
             extraversion: 0.8,
             agreeableness: 0.5,
-            neuroticism: 0.2
-        }
-    }
+            neuroticism: 0.2,
+        },
+    },
 };
 
 function describeLevel(value: number): string {
@@ -621,14 +686,18 @@ function validatePersona(profile: PersonaProfile): ValidationResult {
         }
     }
 
-    if (profile.personality.extraversion < 0.3 &&
-        profile.communication.style === 'casual') {
-        issues.push('Low extraversion inconsistent with casual communication style');
+    if (
+        profile.personality.extraversion < 0.3 &&
+        profile.communication.style === 'casual'
+    ) {
+        issues.push(
+            'Low extraversion inconsistent with casual communication style',
+        );
     }
 
     return {
         valid: issues.length === 0,
-        issues
+        issues,
     };
 }
 
@@ -637,9 +706,13 @@ describe('Persona-Based Agents', () => {
         it('analytical archetype has expected traits', () => {
             const analytical = ARCHETYPES.analytical;
 
-            expect(analytical.behavioral.detailOrientation).toBeGreaterThan(0.8);
+            expect(analytical.behavioral.detailOrientation).toBeGreaterThan(
+                0.8,
+            );
             expect(analytical.behavioral.riskTolerance).toBeLessThan(0.5);
-            expect(analytical.personality.conscientiousness).toBeGreaterThan(0.8);
+            expect(analytical.personality.conscientiousness).toBeGreaterThan(
+                0.8,
+            );
         });
 
         it('creative archetype has expected traits', () => {
@@ -662,9 +735,13 @@ describe('Persona-Based Agents', () => {
     describe('persona validation', () => {
         it('validates correct persona', () => {
             const profile: PersonaProfile = {
-                demographics: { name: 'Alex', age: 35, background: 'Data scientist' },
+                demographics: {
+                    name: 'Alex',
+                    age: 35,
+                    background: 'Data scientist',
+                },
                 ...ARCHETYPES.analytical,
-                communication: { style: 'technical', verbosity: 'detailed' }
+                communication: { style: 'technical', verbosity: 'detailed' },
             };
 
             const result = validatePersona(profile);
@@ -676,12 +753,14 @@ describe('Persona-Based Agents', () => {
             const profile: PersonaProfile = {
                 demographics: { name: 'Child', age: 10, background: 'Student' },
                 ...ARCHETYPES.analytical,
-                communication: { style: 'casual', verbosity: 'concise' }
+                communication: { style: 'casual', verbosity: 'concise' },
             };
 
             const result = validatePersona(profile);
             expect(result.valid).toBe(false);
-            expect(result.issues.some(i => i.includes('Invalid age'))).toBe(true);
+            expect(result.issues.some((i) => i.includes('Invalid age'))).toBe(
+                true,
+            );
         });
 
         it('rejects out-of-range behavioral parameters', () => {
@@ -691,31 +770,39 @@ describe('Persona-Based Agents', () => {
                     assertiveness: 1.5, // Out of range
                     riskTolerance: 0.5,
                     detailOrientation: 0.5,
-                    collaborativeness: 0.5
+                    collaborativeness: 0.5,
                 },
                 personality: ARCHETYPES.analytical.personality,
-                communication: { style: 'formal', verbosity: 'moderate' }
+                communication: { style: 'formal', verbosity: 'moderate' },
             };
 
             const result = validatePersona(profile);
             expect(result.valid).toBe(false);
-            expect(result.issues.some(i => i.includes('assertiveness'))).toBe(true);
+            expect(result.issues.some((i) => i.includes('assertiveness'))).toBe(
+                true,
+            );
         });
 
         it('warns on inconsistent traits', () => {
             const profile: PersonaProfile = {
-                demographics: { name: 'Introvert', age: 30, background: 'Researcher' },
+                demographics: {
+                    name: 'Introvert',
+                    age: 30,
+                    background: 'Researcher',
+                },
                 behavioral: ARCHETYPES.analytical.behavioral,
                 personality: {
                     ...ARCHETYPES.analytical.personality,
-                    extraversion: 0.2 // Very introverted
+                    extraversion: 0.2, // Very introverted
                 },
-                communication: { style: 'casual', verbosity: 'detailed' } // Casual doesn't fit
+                communication: { style: 'casual', verbosity: 'detailed' }, // Casual doesn't fit
             };
 
             const result = validatePersona(profile);
             expect(result.valid).toBe(false);
-            expect(result.issues.some(i => i.includes('inconsistent'))).toBe(true);
+            expect(result.issues.some((i) => i.includes('inconsistent'))).toBe(
+                true,
+            );
         });
     });
 
@@ -725,10 +812,10 @@ describe('Persona-Based Agents', () => {
                 demographics: {
                     name: 'Jordan',
                     age: 42,
-                    background: 'Software architect'
+                    background: 'Software architect',
                 },
                 ...ARCHETYPES.leader,
-                communication: { style: 'technical', verbosity: 'moderate' }
+                communication: { style: 'technical', verbosity: 'moderate' },
             };
 
             const prompt = buildPersonaPrompt(profile);
@@ -747,16 +834,27 @@ describe('Persona-Based Agents', () => {
 
         it('adapts descriptions based on trait values', () => {
             const highOpenness: PersonaProfile = {
-                demographics: { name: 'Creative', age: 30, background: 'Artist' },
+                demographics: {
+                    name: 'Creative',
+                    age: 30,
+                    background: 'Artist',
+                },
                 ...ARCHETYPES.creative,
-                communication: { style: 'casual', verbosity: 'detailed' }
+                communication: { style: 'casual', verbosity: 'detailed' },
             };
 
             const lowOpenness: PersonaProfile = {
-                demographics: { name: 'Traditional', age: 50, background: 'Accountant' },
+                demographics: {
+                    name: 'Traditional',
+                    age: 50,
+                    background: 'Accountant',
+                },
                 behavioral: ARCHETYPES.analytical.behavioral,
-                personality: { ...ARCHETYPES.analytical.personality, openness: 0.2 },
-                communication: { style: 'formal', verbosity: 'concise' }
+                personality: {
+                    ...ARCHETYPES.analytical.personality,
+                    openness: 0.2,
+                },
+                communication: { style: 'formal', verbosity: 'concise' },
             };
 
             const highPrompt = buildPersonaPrompt(highOpenness);
@@ -769,29 +867,34 @@ describe('Persona-Based Agents', () => {
 
     describe('persona agent creation', () => {
         it('creates agent with persona system prompt', () => {
-            const { client } = createMockOpenAIClient({ responses: ['Hello!'] });
+            const { client } = createMockOpenAIClient({
+                responses: ['Hello!'],
+            });
 
             const profile: PersonaProfile = {
                 demographics: {
                     name: 'Alex',
                     age: 35,
                     background: 'Data scientist',
-                    expertise: ['analytics', 'statistics']
+                    expertise: ['analytics', 'statistics'],
                 },
                 ...ARCHETYPES.analytical,
-                communication: { style: 'technical', verbosity: 'detailed' }
+                communication: { style: 'technical', verbosity: 'detailed' },
             };
 
             const systemPrompt = buildPersonaPrompt(profile);
-            const temperature = 0.7 + (profile.personality.openness * 0.2);
+            const temperature = 0.7 + profile.personality.openness * 0.2;
 
-            const agent = new Agent({
-                name: profile.demographics.name,
-                goal: `Act as ${profile.demographics.name} with consistent personality`,
-                systemPrompt,
-                temperature,
-                capabilities: profile.demographics.expertise ?? []
-            }, client);
+            const agent = new Agent(
+                {
+                    name: profile.demographics.name,
+                    goal: `Act as ${profile.demographics.name} with consistent personality`,
+                    systemPrompt,
+                    temperature,
+                    capabilities: profile.demographics.expertise ?? [],
+                },
+                client,
+            );
 
             expect(agent.getName()).toBe('Alex');
         });
@@ -816,18 +919,27 @@ describe('Multi-Agent Coordination', () => {
     it('coordinates task handoff between specialists', async () => {
         // Each agent gets its own mock client with sequential responses
         const { client: researchClient } = createMockOpenAIClient({
-            responses: ['Research complete: Found 3 key insights on AI trends']
+            responses: ['Research complete: Found 3 key insights on AI trends'],
         });
         const { client: analysisClient } = createMockOpenAIClient({
-            responses: ['Analysis: Insights validated and prioritized']
+            responses: ['Analysis: Insights validated and prioritized'],
         });
         const { client: writerClient } = createMockOpenAIClient({
-            responses: ['Report: Executive summary generated']
+            responses: ['Report: Executive summary generated'],
         });
 
-        const researcher = new Agent({ name: 'Researcher', goal: 'Research topics' }, researchClient);
-        const analyst = new Agent({ name: 'Analyst', goal: 'Analyze data' }, analysisClient);
-        const writer = new Agent({ name: 'Writer', goal: 'Create reports' }, writerClient);
+        const researcher = new Agent(
+            { name: 'Researcher', goal: 'Research topics' },
+            researchClient,
+        );
+        const analyst = new Agent(
+            { name: 'Analyst', goal: 'Analyze data' },
+            analysisClient,
+        );
+        const writer = new Agent(
+            { name: 'Writer', goal: 'Create reports' },
+            writerClient,
+        );
 
         researcher.connectToMessageBus(bus);
         analyst.connectToMessageBus(bus);
@@ -853,11 +965,17 @@ describe('Multi-Agent Coordination', () => {
     it('supports SBAR-formatted handoffs', async () => {
         const communicator = new TeamCommunicator();
         const { client, stats } = createMockOpenAIClient({
-            responses: ['Acknowledged. Will investigate and report back.']
+            responses: ['Acknowledged. Will investigate and report back.'],
         });
 
-        const analyst = new Agent({ name: 'Analyst', goal: 'Analyze issues' }, client);
-        const manager = new Agent({ name: 'Manager', goal: 'Manage team' }, client);
+        const analyst = new Agent(
+            { name: 'Analyst', goal: 'Analyze issues' },
+            client,
+        );
+        const manager = new Agent(
+            { name: 'Manager', goal: 'Manage team' },
+            client,
+        );
 
         analyst.connectToMessageBus(bus);
         manager.connectToMessageBus(bus);
@@ -868,7 +986,7 @@ describe('Multi-Agent Coordination', () => {
             background: 'During routine monitoring, found transaction failures',
             assessment: 'Memory leak causing service degradation',
             recommendation: 'Immediate hotfix deployment required',
-            priority: 'critical'
+            priority: 'critical',
         });
 
         // Format and send to manager
@@ -889,13 +1007,22 @@ describe('Multi-Agent Coordination', () => {
                 'Discovery: Market opportunity identified in healthcare sector',
                 'Analysis: 40% growth potential, moderate risk profile',
                 'Consensus: Team recommends pursuing with phased approach',
-                'Plan: Phase 1 - Market research, Phase 2 - MVP development'
-            ]
+                'Plan: Phase 1 - Market research, Phase 2 - MVP development',
+            ],
         });
 
-        const researcher = new Agent({ name: 'Researcher', goal: 'Find opportunities' }, client);
-        const analyst = new Agent({ name: 'Analyst', goal: 'Analyze data' }, client);
-        const leader = new Agent({ name: 'Leader', goal: 'Make decisions' }, client);
+        const researcher = new Agent(
+            { name: 'Researcher', goal: 'Find opportunities' },
+            client,
+        );
+        const analyst = new Agent(
+            { name: 'Analyst', goal: 'Analyze data' },
+            client,
+        );
+        const leader = new Agent(
+            { name: 'Leader', goal: 'Make decisions' },
+            client,
+        );
 
         orchestrator.registerAgent('discovery', researcher);
         orchestrator.registerAgent('analysis', analyst);
@@ -903,10 +1030,22 @@ describe('Multi-Agent Coordination', () => {
         orchestrator.registerAgent('planning', leader);
 
         // Execute full workflow
-        const discoveries = await orchestrator.executePhase('discovery', 'new market expansion');
-        const analyses = await orchestrator.executePhase('analysis', discoveries.join('\n'));
-        const consensus = await orchestrator.executePhase('consensus', analyses.join('\n'));
-        const plan = await orchestrator.executePhase('planning', consensus.join('\n'));
+        const discoveries = await orchestrator.executePhase(
+            'discovery',
+            'new market expansion',
+        );
+        const analyses = await orchestrator.executePhase(
+            'analysis',
+            discoveries.join('\n'),
+        );
+        const consensus = await orchestrator.executePhase(
+            'consensus',
+            analyses.join('\n'),
+        );
+        const plan = await orchestrator.executePhase(
+            'planning',
+            consensus.join('\n'),
+        );
 
         // Verify workflow completed
         expect(orchestrator.getEvents().length).toBe(4);

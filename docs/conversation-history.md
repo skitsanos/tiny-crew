@@ -7,7 +7,7 @@ The Agent class provides built-in conversation history management for multi-turn
 When creating an agent, you can configure history management:
 
 ```typescript
-import { Agent } from '@/Agent';
+import { Agent } from '@tinycrew/Agent';
 import OpenAI from 'openai';
 
 const agent = new Agent(
@@ -242,7 +242,7 @@ agent.on(AgentEvent.HISTORY_SUMMARIZED, (data) => {
 The agent emits events for history changes:
 
 ```typescript
-import { AgentEvent } from '@/utils/types';
+import { AgentEvent } from '@tinycrew/utils/types';
 
 // When a message is added
 agent.on(AgentEvent.MESSAGE_ADDED, (data) => {
@@ -283,7 +283,7 @@ interface ConversationMessage {
 ## Example: Persistent Conversation
 
 ```typescript
-import { Agent } from '@/Agent';
+import { Agent } from '@tinycrew/Agent';
 import OpenAI from 'openai';
 
 async function main() {

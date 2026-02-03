@@ -3,7 +3,12 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { RateLimiter, withRateLimit, estimateTokens, type RateLimiterConfig } from '../src/utils/rateLimiter';
+import {
+    estimateTokens,
+    RateLimiter,
+    type RateLimiterConfig,
+    withRateLimit,
+} from '../src/utils/rateLimiter';
 
 describe('RateLimiter', () => {
     describe('Basic functionality', () => {
@@ -18,7 +23,7 @@ describe('RateLimiter', () => {
         it('creates with custom config', () => {
             const config: RateLimiterConfig = {
                 requestsPerMinute: 30,
-                tokensPerMinute: 50_000
+                tokensPerMinute: 50_000,
             };
             const limiter = new RateLimiter(config);
             const buckets = limiter.getBucketStates();
@@ -77,13 +82,15 @@ describe('RateLimiter', () => {
             await limiter.execute(async () => 'test', 5000);
 
             const afterBuckets = limiter.getBucketStates();
-            expect(afterBuckets.tokens).toBeLessThanOrEqual(initialBuckets.tokens - 5000);
+            expect(afterBuckets.tokens).toBeLessThanOrEqual(
+                initialBuckets.tokens - 5000,
+            );
         });
 
         it('queues requests when bucket is empty', async () => {
             const limiter = new RateLimiter({
                 requestsPerMinute: 120, // 2 per second - fast enough for test
-                tokensPerMinute: 100_000
+                tokensPerMinute: 100_000,
             });
 
             // Fire multiple requests quickly
@@ -92,7 +99,7 @@ describe('RateLimiter', () => {
                 limiter.execute(async () => 2, 100),
                 limiter.execute(async () => 3, 100),
                 limiter.execute(async () => 4, 100),
-                limiter.execute(async () => 5, 100)
+                limiter.execute(async () => 5, 100),
             ];
 
             // Some requests may be queued
@@ -107,7 +114,7 @@ describe('RateLimiter', () => {
         it('refills buckets over time', async () => {
             const limiter = new RateLimiter({
                 requestsPerMinute: 60, // 1 per second
-                tokensPerMinute: 60_000 // 1000 per second
+                tokensPerMinute: 60_000, // 1000 per second
             });
 
             // Consume some tokens
@@ -115,10 +122,12 @@ describe('RateLimiter', () => {
             const afterConsume = limiter.getBucketStates();
 
             // Wait a bit for refill
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
 
             const afterWait = limiter.getBucketStates();
-            expect(afterWait.requests).toBeGreaterThanOrEqual(afterConsume.requests);
+            expect(afterWait.requests).toBeGreaterThanOrEqual(
+                afterConsume.requests,
+            );
         });
     });
 
@@ -126,7 +135,7 @@ describe('RateLimiter', () => {
         it('resets buckets to max', async () => {
             const limiter = new RateLimiter({
                 requestsPerMinute: 10,
-                tokensPerMinute: 10_000
+                tokensPerMinute: 10_000,
             });
 
             // Consume some
@@ -160,7 +169,7 @@ describe('RateLimiter', () => {
             await expect(
                 limiter.execute(async () => {
                     throw new Error('Test error');
-                })
+                }),
             ).rejects.toThrow('Test error');
         });
 
@@ -168,12 +177,12 @@ describe('RateLimiter', () => {
             const limiter = new RateLimiter({
                 requestsPerMinute: 1,
                 maxQueueSize: 2,
-                throwOnLimit: true
+                throwOnLimit: true,
             });
 
             // Fill the queue
             const p1 = limiter.execute(async () => {
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise((r) => setTimeout(r, 1000));
                 return 1;
             }, 100);
 
@@ -181,14 +190,14 @@ describe('RateLimiter', () => {
             const p3 = limiter.execute(async () => 3, 100);
 
             // This should throw
-            await expect(
-                limiter.execute(async () => 4, 100)
-            ).rejects.toThrow('queue full');
+            await expect(limiter.execute(async () => 4, 100)).rejects.toThrow(
+                'queue full',
+            );
 
             // Clean up
             await Promise.race([
                 Promise.all([p1, p2, p3]),
-                new Promise(r => setTimeout(r, 100))
+                new Promise((r) => setTimeout(r, 100)),
             ]).catch(() => {});
         });
     });
@@ -229,8 +238,8 @@ describe('withRateLimit', () => {
     it('wraps an object and adds rateLimiter property', () => {
         const mockClient = {
             responses: {
-                create: async (params: any) => ({ id: 'test', data: params })
-            }
+                create: async (params: any) => ({ id: 'test', data: params }),
+            },
         };
 
         const wrapped = withRateLimit(mockClient, { requestsPerMinute: 10 });
@@ -246,13 +255,13 @@ describe('withRateLimit', () => {
                 create: async (params: { value: number }) => {
                     calls.push(params.value);
                     return { id: 'test', value: params.value };
-                }
-            }
+                },
+            },
         };
 
         const wrapped = withRateLimit(mockClient, {
             requestsPerMinute: 100,
-            tokensPerMinute: 100_000
+            tokensPerMinute: 100_000,
         });
 
         // Make several calls
@@ -267,7 +276,7 @@ describe('withRateLimit', () => {
     it('preserves non-API methods', () => {
         const mockClient = {
             someProperty: 'value',
-            helperMethod: () => 'helper result'
+            helperMethod: () => 'helper result',
         };
 
         const wrapped = withRateLimit(mockClient);
@@ -280,9 +289,9 @@ describe('withRateLimit', () => {
         const mockClient = {
             level1: {
                 level2: {
-                    create: async (x: number) => x * 2
-                }
-            }
+                    create: async (x: number) => x * 2,
+                },
+            },
         };
 
         const wrapped = withRateLimit(mockClient);
@@ -296,7 +305,7 @@ describe('Concurrent request handling', () => {
     it('processes concurrent requests correctly', async () => {
         const limiter = new RateLimiter({
             requestsPerMinute: 100,
-            tokensPerMinute: 100_000
+            tokensPerMinute: 100_000,
         });
 
         const results = await Promise.all([
@@ -304,7 +313,7 @@ describe('Concurrent request handling', () => {
             limiter.execute(async () => 'b', 100),
             limiter.execute(async () => 'c', 100),
             limiter.execute(async () => 'd', 100),
-            limiter.execute(async () => 'e', 100)
+            limiter.execute(async () => 'e', 100),
         ]);
 
         expect(results).toEqual(['a', 'b', 'c', 'd', 'e']);
@@ -314,16 +323,16 @@ describe('Concurrent request handling', () => {
     it('maintains order for queued requests', async () => {
         const limiter = new RateLimiter({
             requestsPerMinute: 600, // 10 per second - fast enough for test
-            tokensPerMinute: 100_000
+            tokensPerMinute: 100_000,
         });
 
         const order: number[] = [];
 
-        const promises = [1, 2, 3, 4, 5].map(n =>
+        const promises = [1, 2, 3, 4, 5].map((n) =>
             limiter.execute(async () => {
                 order.push(n);
                 return n;
-            }, 100)
+            }, 100),
         );
 
         await Promise.all(promises);

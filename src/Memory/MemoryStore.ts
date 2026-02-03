@@ -4,7 +4,7 @@
  */
 
 import EventEmitter from 'node:events';
-import type Logger from '@/utils/logger';
+import type Logger from '@tinycrew/utils/logger';
 import { InMemoryBackend } from './backends/InMemoryBackend';
 import type {
     MemoryBackend,

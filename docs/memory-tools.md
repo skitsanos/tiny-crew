@@ -15,9 +15,9 @@ The memory tools system provides agents with the ability to:
 ## Quick Start
 
 ```typescript
-import { Agent } from '@/Agent';
-import { PersonaMemory } from '@/core/PersonaMemory';
-import { createMemoryTools } from '@/tools/MemoryTools';
+import { Agent } from '@tinycrew/Agent';
+import { PersonaMemory } from '@tinycrew/core/PersonaMemory';
+import { createMemoryTools } from '@tinycrew/tools/MemoryTools';
 import OpenAI from 'openai';
 
 // Create a memory instance for the persona
@@ -44,7 +44,7 @@ const response = await agent.chat('Remember that my favorite color is blue');
 Append content to a memory block without removing existing content.
 
 ```typescript
-import { createCoreMemoryAppendTool } from '@/tools/MemoryTools';
+import { createCoreMemoryAppendTool } from '@tinycrew/tools/MemoryTools';
 
 const appendTool = createCoreMemoryAppendTool(memory, ['persona', 'context']);
 
@@ -63,7 +63,7 @@ const appendTool = createCoreMemoryAppendTool(memory, ['persona', 'context']);
 Replace specific content in a memory block (exact match required).
 
 ```typescript
-import { createCoreMemoryReplaceTool } from '@/tools/MemoryTools';
+import { createCoreMemoryReplaceTool } from '@tinycrew/tools/MemoryTools';
 
 const replaceTool = createCoreMemoryReplaceTool(memory);
 
@@ -87,7 +87,7 @@ const replaceTool = createCoreMemoryReplaceTool(memory);
 Store information in long-term archival memory for later retrieval.
 
 ```typescript
-import { createArchivalMemoryInsertTool } from '@/tools/MemoryTools';
+import { createArchivalMemoryInsertTool } from '@tinycrew/tools/MemoryTools';
 
 const insertTool = createArchivalMemoryInsertTool(memory);
 
@@ -111,7 +111,7 @@ const insertTool = createArchivalMemoryInsertTool(memory);
 Search archival memory for relevant stored information.
 
 ```typescript
-import { createArchivalMemorySearchTool } from '@/tools/MemoryTools';
+import { createArchivalMemorySearchTool } from '@tinycrew/tools/MemoryTools';
 
 const searchTool = createArchivalMemorySearchTool(memory);
 
@@ -135,7 +135,7 @@ const searchTool = createArchivalMemorySearchTool(memory);
 View the current contents of memory blocks.
 
 ```typescript
-import { createCoreMemoryViewTool } from '@/tools/MemoryTools';
+import { createCoreMemoryViewTool } from '@tinycrew/tools/MemoryTools';
 
 const viewTool = createCoreMemoryViewTool(memory);
 
@@ -156,7 +156,7 @@ const viewTool = createCoreMemoryViewTool(memory);
 Use `createMemoryTools()` to create all memory tools at once:
 
 ```typescript
-import { createMemoryTools } from '@/tools/MemoryTools';
+import { createMemoryTools } from '@tinycrew/tools/MemoryTools';
 
 const tools = createMemoryTools(memory, {
     // Restrict which blocks the agent can modify
@@ -236,9 +236,9 @@ All memory tools return JSON responses:
 Here's a complete example of an agent that can manage its own memory:
 
 ```typescript
-import { Agent } from '@/Agent';
-import { PersonaMemory } from '@/core/PersonaMemory';
-import { createMemoryTools } from '@/tools/MemoryTools';
+import { Agent } from '@tinycrew/Agent';
+import { PersonaMemory } from '@tinycrew/core/PersonaMemory';
+import { createMemoryTools } from '@tinycrew/tools/MemoryTools';
 import OpenAI from 'openai';
 
 async function main() {

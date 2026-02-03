@@ -1,78 +1,92 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
-import { join, resolve } from 'path';
-import { tmpdir } from 'os';
-import FileWriteTool from '@/Tools/FileWriteTool';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import FileWriteTool from '@tinycrew/Tools/FileWriteTool';
 
 describe('FileWriteTool path validation', () => {
-  let baseDir: string;
-  let tool: FileWriteTool;
+    let baseDir: string;
+    let tool: FileWriteTool;
 
-  beforeAll(() => {
-    baseDir = mkdtempSync(join(tmpdir(), 'tiny-crew-filewrite-'));
-    tool = new FileWriteTool({ basePath: baseDir });
-  });
-
-  afterAll(() => {
-    rmSync(baseDir, { recursive: true, force: true });
-  });
-
-  it('writes files inside the configured base directory', async () => {
-    const result = await tool.use({
-      filename: 'notes/safe.txt',
-      content: 'hello tiny crew'
+    beforeAll(() => {
+        baseDir = mkdtempSync(join(tmpdir(), 'tiny-crew-filewrite-'));
+        tool = new FileWriteTool({ basePath: baseDir });
     });
 
-    expect(result).toContain('Content successfully written');
-
-    const saved = readFileSync(join(baseDir, 'notes', 'safe.txt'), 'utf8');
-    expect(saved).toBe('hello tiny crew');
-  });
-
-  it('rejects path traversal attempts', async () => {
-    expect(tool.validateInput({ filename: '../escape.txt', content: 'nope' })).toBe(false);
-
-    await expect(tool.use({ filename: '../escape.txt', content: 'nope' })).rejects.toThrow('Invalid file path or content');
-  });
-
-  it('rejects absolute paths outside the base directory', async () => {
-    const outsidePath = resolve(baseDir, '../outside.txt');
-
-    expect(tool.validateInput({ filename: outsidePath, content: 'nope' })).toBe(false);
-
-    await expect(tool.use({ filename: outsidePath, content: 'nope' })).rejects.toThrow('Invalid file path or content');
-  });
-
-  it('allows empty content for truncating files', async () => {
-    // First write some content
-    await tool.use({
-      filename: 'truncate-test.txt',
-      content: 'initial content'
+    afterAll(() => {
+        rmSync(baseDir, { recursive: true, force: true });
     });
 
-    let saved = readFileSync(join(baseDir, 'truncate-test.txt'), 'utf8');
-    expect(saved).toBe('initial content');
+    it('writes files inside the configured base directory', async () => {
+        const result = await tool.use({
+            filename: 'notes/safe.txt',
+            content: 'hello tiny crew',
+        });
 
-    // Now truncate with empty content
-    const result = await tool.use({
-      filename: 'truncate-test.txt',
-      content: ''
+        expect(result).toContain('Content successfully written');
+
+        const saved = readFileSync(join(baseDir, 'notes', 'safe.txt'), 'utf8');
+        expect(saved).toBe('hello tiny crew');
     });
 
-    expect(result).toContain('Content successfully written');
-    saved = readFileSync(join(baseDir, 'truncate-test.txt'), 'utf8');
-    expect(saved).toBe('');
-  });
+    it('rejects path traversal attempts', async () => {
+        expect(
+            tool.validateInput({ filename: '../escape.txt', content: 'nope' }),
+        ).toBe(false);
 
-  it('validates empty content passes validation', () => {
-    expect(tool.validateInput({ filename: 'empty.txt', content: '' })).toBe(true);
-  });
+        await expect(
+            tool.use({ filename: '../escape.txt', content: 'nope' }),
+        ).rejects.toThrow('Invalid file path or content');
+    });
 
-  it('rejects undefined content', () => {
-    expect(tool.validateInput({ filename: 'test.txt', content: undefined })).toBe(false);
-  });
+    it('rejects absolute paths outside the base directory', async () => {
+        const outsidePath = resolve(baseDir, '../outside.txt');
 
-  it('rejects null content', () => {
-    expect(tool.validateInput({ filename: 'test.txt', content: null })).toBe(false);
-  });
+        expect(
+            tool.validateInput({ filename: outsidePath, content: 'nope' }),
+        ).toBe(false);
+
+        await expect(
+            tool.use({ filename: outsidePath, content: 'nope' }),
+        ).rejects.toThrow('Invalid file path or content');
+    });
+
+    it('allows empty content for truncating files', async () => {
+        // First write some content
+        await tool.use({
+            filename: 'truncate-test.txt',
+            content: 'initial content',
+        });
+
+        let saved = readFileSync(join(baseDir, 'truncate-test.txt'), 'utf8');
+        expect(saved).toBe('initial content');
+
+        // Now truncate with empty content
+        const result = await tool.use({
+            filename: 'truncate-test.txt',
+            content: '',
+        });
+
+        expect(result).toContain('Content successfully written');
+        saved = readFileSync(join(baseDir, 'truncate-test.txt'), 'utf8');
+        expect(saved).toBe('');
+    });
+
+    it('validates empty content passes validation', () => {
+        expect(tool.validateInput({ filename: 'empty.txt', content: '' })).toBe(
+            true,
+        );
+    });
+
+    it('rejects undefined content', () => {
+        expect(
+            tool.validateInput({ filename: 'test.txt', content: undefined }),
+        ).toBe(false);
+    });
+
+    it('rejects null content', () => {
+        expect(
+            tool.validateInput({ filename: 'test.txt', content: null }),
+        ).toBe(false);
+    });
 });

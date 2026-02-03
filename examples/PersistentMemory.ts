@@ -11,15 +11,18 @@
  * Run multiple times to see how memory persists between executions.
  */
 
-import Crew, { type CrewOptions } from '@/Crew';
-import Agent from '@/Agent';
-import OpenAI from 'openai';
-import Logger from '@/utils/logger';
-import { JSONFileBackend, MemoryEvent } from '@/Memory';
+import path from 'node:path';
+import Agent from '@tinycrew/Agent';
+import Crew, { type CrewOptions } from '@tinycrew/Crew';
+import { JSONFileBackend, MemoryEvent } from '@tinycrew/Memory';
+import Logger from '@tinycrew/utils/logger';
 import dedent from 'dedent';
-import path from 'path';
+import OpenAI from 'openai';
 
-const logger = new Logger('PersistentMemoryExample', { level: 'DEBUG', colorize: true });
+const logger = new Logger('PersistentMemoryExample', {
+    level: 'DEBUG',
+    colorize: true,
+});
 
 async function runPersistentMemoryExample() {
     logger.info('Starting Persistent Memory Example');
@@ -38,7 +41,7 @@ async function runPersistentMemoryExample() {
     const memoryBackend = new JSONFileBackend({
         basePath: path.join(process.cwd(), 'data', 'memory'),
         prettyPrint: true, // Human-readable JSON files
-        createDir: true
+        createDir: true,
     });
 
     // Crew options with custom memory backend
@@ -47,8 +50,8 @@ async function runPersistentMemoryExample() {
         memoryConfig: {
             maxItems: 50,
             maxTotalTokens: 50000,
-            autoEvict: true
-        }
+            autoEvict: true,
+        },
     };
 
     // Create the crew with persistent memory
@@ -56,11 +59,11 @@ async function runPersistentMemoryExample() {
         {
             goal: 'Build a knowledge base about technology topics through research and analysis',
             model: baseModel,
-            temperature: 0.5
+            temperature: 0.5,
         },
         openai,
         [], // empty chat history
-        crewOptions
+        crewOptions,
     );
 
     // Listen for memory events
@@ -71,35 +74,47 @@ async function runPersistentMemoryExample() {
     });
 
     memoryStore.on(MemoryEvent.ITEMS_EVICTED, (payload) => {
-        logger.warn(`Evicted ${payload.count} memory items (reason: ${payload.reason})`);
+        logger.warn(
+            `Evicted ${payload.count} memory items (reason: ${payload.reason})`,
+        );
     });
 
     // Create specialized agents
-    const researchAgent = new Agent({
-        name: 'Researcher',
-        goal: 'Research and summarize technical topics accurately',
-        expectedOutput: 'Concise technical summaries with key facts',
-        model: baseModel,
-        capabilities: ['research', 'summarization', 'technical_writing'],
-        temperature: 0.4,
-        systemPrompt: dedent`
+    const researchAgent = new Agent(
+        {
+            name: 'Researcher',
+            goal: 'Research and summarize technical topics accurately',
+            expectedOutput: 'Concise technical summaries with key facts',
+            model: baseModel,
+            capabilities: ['research', 'summarization', 'technical_writing'],
+            temperature: 0.4,
+            systemPrompt: dedent`
             You are a technical researcher who provides accurate, concise summaries of technology topics.
             Focus on key facts, recent developments, and practical applications.
-            Keep responses under 300 words.`
-    }, openai);
+            Keep responses under 300 words.`,
+        },
+        openai,
+    );
 
-    const analystAgent = new Agent({
-        name: 'Analyst',
-        goal: 'Analyze trends and provide insights from research data',
-        expectedOutput: 'Analytical insights with supporting reasoning',
-        model: baseModel,
-        capabilities: ['analysis', 'trend_identification', 'insight_generation'],
-        temperature: 0.5,
-        systemPrompt: dedent`
+    const analystAgent = new Agent(
+        {
+            name: 'Analyst',
+            goal: 'Analyze trends and provide insights from research data',
+            expectedOutput: 'Analytical insights with supporting reasoning',
+            model: baseModel,
+            capabilities: [
+                'analysis',
+                'trend_identification',
+                'insight_generation',
+            ],
+            temperature: 0.5,
+            systemPrompt: dedent`
             You are a technology analyst who identifies patterns and provides actionable insights.
             Base your analysis on available data and clearly state your reasoning.
-            Highlight opportunities and potential concerns.`
-    }, openai);
+            Highlight opportunities and potential concerns.`,
+        },
+        openai,
+    );
 
     crew.addAgent(researchAgent);
     crew.addAgent(analystAgent);
@@ -114,32 +129,36 @@ async function runPersistentMemoryExample() {
         logger.info('Memory stats at startup:', initialStats);
 
         if (initialStats.itemCount > 0) {
-            logger.info(`Found ${initialStats.itemCount} items from previous runs`);
+            logger.info(
+                `Found ${initialStats.itemCount} items from previous runs`,
+            );
 
             // Query memory for previous research by the Researcher agent
             const previousResearch = await memoryStore.query(crew.getId(), {
                 agent: 'Researcher',
                 maxItems: 5,
-                sortBy: 'recency'
+                sortBy: 'recency',
             });
 
             if (previousResearch.length > 0) {
                 logger.info('Previous research topics:');
                 for (const item of previousResearch) {
-                    logger.info(`  - ${item.task.slice(0, 60)}... (${new Date(item.createdAt).toLocaleDateString()})`);
+                    logger.info(
+                        `  - ${item.task.slice(0, 60)}... (${new Date(item.createdAt).toLocaleDateString()})`,
+                    );
                 }
             }
 
             // Build context from existing memory for the current session
             const memoryContext = await crew.buildMemoryContext({
                 maxTokens: 2000,
-                maxItems: 10
+                maxItems: 10,
             });
 
             if (memoryContext) {
                 logger.debug('Built memory context for prompts:', {
                     length: memoryContext.length,
-                    preview: memoryContext.slice(0, 200) + '...'
+                    preview: `${memoryContext.slice(0, 200)}...`,
                 });
             }
         }
@@ -150,16 +169,22 @@ async function runPersistentMemoryExample() {
             'large language models and their enterprise applications',
             'edge computing trends in IoT',
             'sustainable technology in data centers',
-            'AI-powered cybersecurity solutions'
+            'AI-powered cybersecurity solutions',
         ];
 
         // Pick a random topic or use env variable
-        const topic = process.env.RESEARCH_TOPIC || topics[Math.floor(Math.random() * topics.length)];
+        const topic =
+            process.env.RESEARCH_TOPIC ||
+            topics[Math.floor(Math.random() * topics.length)];
         logger.info(`Research topic for this run: ${topic}`);
 
         // Add tasks
-        crew.addTask(`Research and summarize the current state of ${topic}. Include recent developments and key players in this space.`);
-        crew.addTask(`Analyze the market trends and future outlook for ${topic}. Identify opportunities and challenges.`);
+        crew.addTask(
+            `Research and summarize the current state of ${topic}. Include recent developments and key players in this space.`,
+        );
+        crew.addTask(
+            `Analyze the market trends and future outlook for ${topic}. Identify opportunities and challenges.`,
+        );
 
         // Execute tasks
         logger.info('Executing research tasks...');
@@ -178,19 +203,20 @@ async function runPersistentMemoryExample() {
         // Query memory by keywords
         const aiRelatedMemory = await memoryStore.query(crew.getId(), {
             keywords: ['AI', 'machine learning', 'artificial intelligence'],
-            maxItems: 5
+            maxItems: 5,
         });
 
         if (aiRelatedMemory.length > 0) {
-            logger.info(`Found ${aiRelatedMemory.length} AI-related memory items`);
+            logger.info(
+                `Found ${aiRelatedMemory.length} AI-related memory items`,
+            );
         }
 
         // Generate final summary using memory context
         const summary = await crew.provideFinalResponse(dedent`
             Based on all the research conducted (including any previous sessions stored in memory),
             provide a brief executive summary of our knowledge base on technology topics.
-            Highlight the most important findings and any connections between different topics.`
-        );
+            Highlight the most important findings and any connections between different topics.`);
 
         console.log('\n=== Executive Summary ===\n');
         console.log(summary);
@@ -198,10 +224,11 @@ async function runPersistentMemoryExample() {
 
         // Clean up
         await crew.closeMemory();
-        logger.info('Memory store closed. Run this example again to see persistent memory in action!');
+        logger.info(
+            'Memory store closed. Run this example again to see persistent memory in action!',
+        );
 
         return summary;
-
     } catch (error) {
         logger.error('An error occurred:', error);
         await crew.closeMemory();

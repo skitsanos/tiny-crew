@@ -3,8 +3,8 @@
  */
 
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { Agent } from '@/Agent';
-import { AgentEvent, type ConversationMessage } from '@/utils/types';
+import { Agent } from '@tinycrew/Agent';
+import { AgentEvent, type ConversationMessage } from '@tinycrew/utils/types';
 
 // Mock OpenAI client
 const mockClient = {
@@ -15,12 +15,17 @@ const mockClient = {
                 {
                     type: 'message',
                     role: 'assistant',
-                    content: [{ type: 'output_text', text: 'Hello! How can I help you?' }]
-                }
+                    content: [
+                        {
+                            type: 'output_text',
+                            text: 'Hello! How can I help you?',
+                        },
+                    ],
+                },
             ],
-            output_text: 'Hello! How can I help you?'
-        }))
-    }
+            output_text: 'Hello! How can I help you?',
+        })),
+    },
 } as any;
 
 describe('Agent Conversation History', () => {
@@ -35,9 +40,9 @@ describe('Agent Conversation History', () => {
                 name: 'TestAgent',
                 goal: 'Help with testing',
                 model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
-                maxHistoryMessages: 10
+                maxHistoryMessages: 10,
             },
-            mockClient
+            mockClient,
         );
     });
 
@@ -70,7 +75,10 @@ describe('Agent Conversation History', () => {
         it('adds a message to history', () => {
             agent.addToHistory({ role: 'user', content: 'Hello' });
             expect(agent.getHistoryLength()).toBe(1);
-            expect(agent.getHistory()[0]).toEqual({ role: 'user', content: 'Hello' });
+            expect(agent.getHistory()[0]).toEqual({
+                role: 'user',
+                content: 'Hello',
+            });
         });
 
         it('emits MESSAGE_ADDED event', () => {
@@ -136,15 +144,21 @@ describe('Agent Conversation History', () => {
                 {
                     name: 'SmallAgent',
                     goal: 'Test trimming',
-                    maxHistoryMessages: 3
+                    maxHistoryMessages: 3,
                 },
-                mockClient
+                mockClient,
             );
 
             smallAgent.addToHistory({ role: 'user', content: 'Message 1' });
-            smallAgent.addToHistory({ role: 'assistant', content: 'Response 1' });
+            smallAgent.addToHistory({
+                role: 'assistant',
+                content: 'Response 1',
+            });
             smallAgent.addToHistory({ role: 'user', content: 'Message 2' });
-            smallAgent.addToHistory({ role: 'assistant', content: 'Response 2' });
+            smallAgent.addToHistory({
+                role: 'assistant',
+                content: 'Response 2',
+            });
 
             expect(smallAgent.getHistoryLength()).toBe(3);
             // First message should be removed
@@ -156,9 +170,9 @@ describe('Agent Conversation History', () => {
                 {
                     name: 'SmallAgent',
                     goal: 'Test trimming',
-                    maxHistoryMessages: 2
+                    maxHistoryMessages: 2,
                 },
-                mockClient
+                mockClient,
             );
 
             let eventFired = false;
@@ -167,7 +181,10 @@ describe('Agent Conversation History', () => {
             });
 
             smallAgent.addToHistory({ role: 'user', content: 'Message 1' });
-            smallAgent.addToHistory({ role: 'assistant', content: 'Response 1' });
+            smallAgent.addToHistory({
+                role: 'assistant',
+                content: 'Response 1',
+            });
             smallAgent.addToHistory({ role: 'user', content: 'Message 2' });
 
             expect(eventFired).toBe(true);
@@ -178,14 +195,20 @@ describe('Agent Conversation History', () => {
                 {
                     name: 'SmallAgent',
                     goal: 'Test trimming',
-                    maxHistoryMessages: 3
+                    maxHistoryMessages: 3,
                 },
-                mockClient
+                mockClient,
             );
 
-            smallAgent.addToHistory({ role: 'system', content: 'System prompt' });
+            smallAgent.addToHistory({
+                role: 'system',
+                content: 'System prompt',
+            });
             smallAgent.addToHistory({ role: 'user', content: 'Message 1' });
-            smallAgent.addToHistory({ role: 'assistant', content: 'Response 1' });
+            smallAgent.addToHistory({
+                role: 'assistant',
+                content: 'Response 1',
+            });
             smallAgent.addToHistory({ role: 'user', content: 'Message 2' });
 
             expect(smallAgent.getHistoryLength()).toBe(3);
@@ -201,7 +224,7 @@ describe('Agent Conversation History', () => {
 
             const newHistory: ConversationMessage[] = [
                 { role: 'user', content: 'New message 1' },
-                { role: 'assistant', content: 'New response 1' }
+                { role: 'assistant', content: 'New response 1' },
             ];
 
             agent.setHistory(newHistory);
@@ -211,7 +234,7 @@ describe('Agent Conversation History', () => {
 
         it('creates a copy of the provided history', () => {
             const newHistory: ConversationMessage[] = [
-                { role: 'user', content: 'Message' }
+                { role: 'user', content: 'Message' },
             ];
 
             agent.setHistory(newHistory);
@@ -239,13 +262,15 @@ describe('Agent Conversation History', () => {
         it('adds user message to history', async () => {
             await agent.chat('Hello');
             const history = agent.getHistory();
-            expect(history.some(m => m.role === 'user' && m.content === 'Hello')).toBe(true);
+            expect(
+                history.some((m) => m.role === 'user' && m.content === 'Hello'),
+            ).toBe(true);
         });
 
         it('adds assistant response to history', async () => {
             await agent.chat('Hello');
             const history = agent.getHistory();
-            expect(history.some(m => m.role === 'assistant')).toBe(true);
+            expect(history.some((m) => m.role === 'assistant')).toBe(true);
         });
 
         it('returns the assistant response', async () => {
@@ -265,12 +290,15 @@ describe('Agent Conversation History', () => {
         it('defaults maxHistoryMessages to 50', () => {
             const defaultAgent = new Agent(
                 { name: 'Default', goal: 'Test' },
-                mockClient
+                mockClient,
             );
 
             // Add 51 messages to test the limit
             for (let i = 0; i < 51; i++) {
-                defaultAgent.addToHistory({ role: 'user', content: `Message ${i}` });
+                defaultAgent.addToHistory({
+                    role: 'user',
+                    content: `Message ${i}`,
+                });
             }
 
             expect(defaultAgent.getHistoryLength()).toBe(50);
@@ -279,7 +307,7 @@ describe('Agent Conversation History', () => {
         it('defaults autoManageHistory to true', async () => {
             const defaultAgent = new Agent(
                 { name: 'Default', goal: 'Test' },
-                mockClient
+                mockClient,
             );
 
             await defaultAgent.chat('Hello');
@@ -294,9 +322,9 @@ describe('Agent Conversation History', () => {
                 {
                     name: 'NoAuto',
                     goal: 'Test',
-                    autoManageHistory: false
+                    autoManageHistory: false,
                 },
-                mockClient
+                mockClient,
             );
 
             await noAutoAgent.chat('Hello');
@@ -316,19 +344,24 @@ describe('Agent conversation with tools', () => {
                         {
                             type: 'message',
                             role: 'assistant',
-                            content: [{ type: 'output_text', text: 'Tool result processed' }]
-                        }
+                            content: [
+                                {
+                                    type: 'output_text',
+                                    text: 'Tool result processed',
+                                },
+                            ],
+                        },
                     ],
-                    output_text: 'Tool result processed'
-                }))
-            }
+                    output_text: 'Tool result processed',
+                })),
+            },
         } as any;
 
         const agentWithTool = new Agent(
             {
                 name: 'ToolAgent',
                 goal: 'Use tools',
-                maxHistoryMessages: 10
+                maxHistoryMessages: 10,
             },
             mockToolClient,
             [
@@ -341,14 +374,14 @@ describe('Agent conversation with tools', () => {
                         parameters: {
                             type: 'object',
                             properties: {
-                                input: { type: 'string', description: 'Input' }
+                                input: { type: 'string', description: 'Input' },
                             },
-                            required: ['input']
-                        }
+                            required: ['input'],
+                        },
                     },
-                    use: async (args: any) => `Processed: ${args.input}`
-                }
-            ]
+                    use: async (args: any) => `Processed: ${args.input}`,
+                },
+            ],
         );
 
         await agentWithTool.chat('Use the tool');

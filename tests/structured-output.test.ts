@@ -6,9 +6,9 @@
  */
 
 import { beforeAll, describe, expect, it } from 'bun:test';
-import { Agent } from '../src/Agent';
 import OpenAI from 'openai';
 import { z } from 'zod';
+import { Agent } from '../src/Agent';
 import { createMockJsonClient } from './utils/mock-openai';
 
 // Check if API key is available for integration tests
@@ -23,9 +23,9 @@ const describeWithApi = hasApiKey ? describe : describe.skip;
  * Simple schema for basic extraction
  */
 const PersonSchema = z.object({
-    name: z.string().describe('Person\'s full name'),
-    age: z.number().describe('Person\'s age in years'),
-    occupation: z.string().describe('Person\'s job or profession')
+    name: z.string().describe("Person's full name"),
+    age: z.number().describe("Person's age in years"),
+    occupation: z.string().describe("Person's job or profession"),
 });
 
 /**
@@ -33,9 +33,11 @@ const PersonSchema = z.object({
  */
 const TaskSchema = z.object({
     title: z.string().describe('Task title'),
-    priority: z.enum(['low', 'medium', 'high', 'critical']).describe('Task priority level'),
+    priority: z
+        .enum(['low', 'medium', 'high', 'critical'])
+        .describe('Task priority level'),
     status: z.enum(['todo', 'in_progress', 'done']).describe('Current status'),
-    estimatedHours: z.number().describe('Estimated hours to complete')
+    estimatedHours: z.number().describe('Estimated hours to complete'),
 });
 
 /**
@@ -45,7 +47,7 @@ const AddressSchema = z.object({
     street: z.string(),
     city: z.string(),
     country: z.string(),
-    postalCode: z.string()
+    postalCode: z.string(),
 });
 
 const CompanySchema = z.object({
@@ -53,7 +55,7 @@ const CompanySchema = z.object({
     industry: z.string().describe('Industry sector'),
     employees: z.number().describe('Number of employees'),
     headquarters: AddressSchema.describe('Company headquarters address'),
-    isPublic: z.boolean().describe('Whether company is publicly traded')
+    isPublic: z.boolean().describe('Whether company is publicly traded'),
 });
 
 /**
@@ -63,12 +65,16 @@ const MeetingNotesSchema = z.object({
     title: z.string().describe('Meeting title'),
     date: z.string().describe('Meeting date'),
     attendees: z.array(z.string()).describe('List of attendee names'),
-    actionItems: z.array(z.object({
-        task: z.string(),
-        assignee: z.string(),
-        dueDate: z.string()
-    })).describe('Action items from the meeting'),
-    summary: z.string().describe('Brief meeting summary')
+    actionItems: z
+        .array(
+            z.object({
+                task: z.string(),
+                assignee: z.string(),
+                dueDate: z.string(),
+            }),
+        )
+        .describe('Action items from the meeting'),
+    summary: z.string().describe('Brief meeting summary'),
 });
 
 /**
@@ -78,9 +84,15 @@ const ProductSchema = z.object({
     name: z.string().describe('Product name'),
     price: z.number().describe('Price in USD'),
     category: z.string().describe('Product category'),
-    description: z.string().nullable().describe('Product description, null if not available'),
-    rating: z.number().nullable().describe('Average rating, null if no reviews'),
-    inStock: z.boolean().describe('Whether product is in stock')
+    description: z
+        .string()
+        .nullable()
+        .describe('Product description, null if not available'),
+    rating: z
+        .number()
+        .nullable()
+        .describe('Average rating, null if no reviews'),
+    inStock: z.boolean().describe('Whether product is in stock'),
 });
 
 // ============================================================================
@@ -96,7 +108,11 @@ describe('Structured Output - Schema Validation', () => {
         });
 
         it('rejects invalid age type', () => {
-            const data = { name: 'John Doe', age: 'thirty', occupation: 'Engineer' };
+            const data = {
+                name: 'John Doe',
+                age: 'thirty',
+                occupation: 'Engineer',
+            };
             const result = PersonSchema.safeParse(data);
             expect(result.success).toBe(false);
         });
@@ -114,7 +130,7 @@ describe('Structured Output - Schema Validation', () => {
                 title: 'Fix bug',
                 priority: 'high',
                 status: 'in_progress',
-                estimatedHours: 4
+                estimatedHours: 4,
             };
             const result = TaskSchema.safeParse(data);
             expect(result.success).toBe(true);
@@ -125,7 +141,7 @@ describe('Structured Output - Schema Validation', () => {
                 title: 'Fix bug',
                 priority: 'urgent', // Not in enum
                 status: 'in_progress',
-                estimatedHours: 4
+                estimatedHours: 4,
             };
             const result = TaskSchema.safeParse(data);
             expect(result.success).toBe(false);
@@ -142,9 +158,9 @@ describe('Structured Output - Schema Validation', () => {
                     street: '123 Main St',
                     city: 'San Francisco',
                     country: 'USA',
-                    postalCode: '94105'
+                    postalCode: '94105',
                 },
-                isPublic: true
+                isPublic: true,
             };
             const result = CompanySchema.safeParse(data);
             expect(result.success).toBe(true);
@@ -157,10 +173,10 @@ describe('Structured Output - Schema Validation', () => {
                 employees: 500,
                 headquarters: {
                     street: '123 Main St',
-                    city: 'San Francisco'
+                    city: 'San Francisco',
                     // Missing country and postalCode
                 },
-                isPublic: true
+                isPublic: true,
             };
             const result = CompanySchema.safeParse(data);
             expect(result.success).toBe(false);
@@ -174,10 +190,18 @@ describe('Structured Output - Schema Validation', () => {
                 date: '2024-01-15',
                 attendees: ['Alice', 'Bob', 'Charlie'],
                 actionItems: [
-                    { task: 'Review budget', assignee: 'Alice', dueDate: '2024-01-20' },
-                    { task: 'Draft proposal', assignee: 'Bob', dueDate: '2024-01-22' }
+                    {
+                        task: 'Review budget',
+                        assignee: 'Alice',
+                        dueDate: '2024-01-20',
+                    },
+                    {
+                        task: 'Draft proposal',
+                        assignee: 'Bob',
+                        dueDate: '2024-01-22',
+                    },
                 ],
-                summary: 'Discussed Q4 goals and assigned tasks.'
+                summary: 'Discussed Q4 goals and assigned tasks.',
             };
             const result = MeetingNotesSchema.safeParse(data);
             expect(result.success).toBe(true);
@@ -189,7 +213,7 @@ describe('Structured Output - Schema Validation', () => {
                 date: '2024-01-15',
                 attendees: [],
                 actionItems: [],
-                summary: 'Brief status update, no action items.'
+                summary: 'Brief status update, no action items.',
             };
             const result = MeetingNotesSchema.safeParse(data);
             expect(result.success).toBe(true);
@@ -204,7 +228,7 @@ describe('Structured Output - Schema Validation', () => {
                 category: 'Gadgets',
                 description: null,
                 rating: null,
-                inStock: true
+                inStock: true,
             };
             const result = ProductSchema.safeParse(data);
             expect(result.success).toBe(true);
@@ -217,7 +241,7 @@ describe('Structured Output - Schema Validation', () => {
                 category: 'Gadgets',
                 description: 'A useful widget',
                 rating: 4.5,
-                inStock: true
+                inStock: true,
             };
             const result = ProductSchema.safeParse(data);
             expect(result.success).toBe(true);
@@ -227,19 +251,28 @@ describe('Structured Output - Schema Validation', () => {
 
 describe('Structured Output - Mock Agent', () => {
     it('should parse JSON response from agent', async () => {
-        const mockData = { name: 'Jane Smith', age: 28, occupation: 'Designer' };
+        const mockData = {
+            name: 'Jane Smith',
+            age: 28,
+            occupation: 'Designer',
+        };
         const { client } = createMockJsonClient([mockData]);
 
-        const agent = new Agent({
-            name: 'Extractor',
-            goal: 'Extract person data',
-            responseSchema: {
-                schema: PersonSchema,
-                name: 'person'
-            }
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'Extractor',
+                goal: 'Extract person data',
+                responseSchema: {
+                    schema: PersonSchema,
+                    name: 'person',
+                },
+            },
+            client,
+        );
 
-        const result = await agent.performTask('Extract: Jane Smith is a 28-year-old designer.');
+        const result = await agent.performTask(
+            'Extract: Jane Smith is a 28-year-old designer.',
+        );
         const parsed = JSON.parse(result);
 
         expect(PersonSchema.safeParse(parsed).success).toBe(true);
@@ -256,20 +289,23 @@ describe('Structured Output - Mock Agent', () => {
                 street: '456 Tech Ave',
                 city: 'Austin',
                 country: 'USA',
-                postalCode: '78701'
+                postalCode: '78701',
             },
-            isPublic: false
+            isPublic: false,
         };
         const { client } = createMockJsonClient([mockData]);
 
-        const agent = new Agent({
-            name: 'CompanyExtractor',
-            goal: 'Extract company data',
-            responseSchema: {
-                schema: CompanySchema,
-                name: 'company'
-            }
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'CompanyExtractor',
+                goal: 'Extract company data',
+                responseSchema: {
+                    schema: CompanySchema,
+                    name: 'company',
+                },
+            },
+            client,
+        );
 
         const result = await agent.performTask('Extract company info...');
         const parsed = JSON.parse(result);
@@ -284,20 +320,27 @@ describe('Structured Output - Mock Agent', () => {
             date: '2024-02-01',
             attendees: ['Dev1', 'Dev2', 'PM'],
             actionItems: [
-                { task: 'Deploy v2.0', assignee: 'Dev1', dueDate: '2024-02-05' }
+                {
+                    task: 'Deploy v2.0',
+                    assignee: 'Dev1',
+                    dueDate: '2024-02-05',
+                },
             ],
-            summary: 'Sprint completed successfully.'
+            summary: 'Sprint completed successfully.',
         };
         const { client } = createMockJsonClient([mockData]);
 
-        const agent = new Agent({
-            name: 'NotesExtractor',
-            goal: 'Extract meeting notes',
-            responseSchema: {
-                schema: MeetingNotesSchema,
-                name: 'meeting_notes'
-            }
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'NotesExtractor',
+                goal: 'Extract meeting notes',
+                responseSchema: {
+                    schema: MeetingNotesSchema,
+                    name: 'meeting_notes',
+                },
+            },
+            client,
+        );
 
         const result = await agent.performTask('Extract meeting notes...');
         const parsed = JSON.parse(result);
@@ -320,19 +363,22 @@ describeWithApi('Structured Output - API Integration', () => {
     });
 
     it('should extract person data with real API', async () => {
-        const agent = new Agent({
-            name: 'PersonExtractor',
-            goal: 'Extract person information from text',
-            model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
-            temperature: 0.1,
-            responseSchema: {
-                schema: PersonSchema,
-                name: 'person_data'
-            }
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'PersonExtractor',
+                goal: 'Extract person information from text',
+                model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
+                temperature: 0.1,
+                responseSchema: {
+                    schema: PersonSchema,
+                    name: 'person_data',
+                },
+            },
+            client,
+        );
 
         const result = await agent.performTask(
-            'John Smith is a 45-year-old software architect working at a major tech company.'
+            'John Smith is a 45-year-old software architect working at a major tech company.',
         );
 
         const parsed = JSON.parse(result);
@@ -345,44 +391,52 @@ describeWithApi('Structured Output - API Integration', () => {
     }, 15000);
 
     it('should extract task with enum fields', async () => {
-        const agent = new Agent({
-            name: 'TaskExtractor',
-            goal: 'Extract task information',
-            model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
-            temperature: 0.1,
-            responseSchema: {
-                schema: TaskSchema,
-                name: 'task_data'
-            }
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'TaskExtractor',
+                goal: 'Extract task information',
+                model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
+                temperature: 0.1,
+                responseSchema: {
+                    schema: TaskSchema,
+                    name: 'task_data',
+                },
+            },
+            client,
+        );
 
         const result = await agent.performTask(
-            'HIGH PRIORITY: Fix the login bug. Currently being worked on. Should take about 3 hours.'
+            'HIGH PRIORITY: Fix the login bug. Currently being worked on. Should take about 3 hours.',
         );
 
         const parsed = JSON.parse(result);
         const validation = TaskSchema.safeParse(parsed);
 
         expect(validation.success).toBe(true);
-        expect(['low', 'medium', 'high', 'critical']).toContain(parsed.priority);
+        expect(['low', 'medium', 'high', 'critical']).toContain(
+            parsed.priority,
+        );
         expect(['todo', 'in_progress', 'done']).toContain(parsed.status);
         expect(typeof parsed.estimatedHours).toBe('number');
     }, 15000);
 
     it('should handle nullable fields correctly', async () => {
-        const agent = new Agent({
-            name: 'ProductExtractor',
-            goal: 'Extract product information',
-            model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
-            temperature: 0.1,
-            responseSchema: {
-                schema: ProductSchema,
-                name: 'product_data'
-            }
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'ProductExtractor',
+                goal: 'Extract product information',
+                model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
+                temperature: 0.1,
+                responseSchema: {
+                    schema: ProductSchema,
+                    name: 'product_data',
+                },
+            },
+            client,
+        );
 
         const result = await agent.performTask(
-            'New product: SuperWidget priced at $49.99 in the Electronics category. Currently in stock. No reviews yet.'
+            'New product: SuperWidget priced at $49.99 in the Electronics category. Currently in stock. No reviews yet.',
         );
 
         const parsed = JSON.parse(result);

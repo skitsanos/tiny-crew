@@ -1,16 +1,23 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-
 import {
-    MemoryStore,
+    afterAll,
+    afterEach,
+    beforeAll,
+    beforeEach,
+    describe,
+    expect,
+    it,
+} from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+    createMemoryItem,
+    estimateTokens,
     InMemoryBackend,
     JSONFileBackend,
     MemoryEvent,
-    createMemoryItem,
-    estimateTokens
-} from '@/Memory';
+    MemoryStore,
+} from '@tinycrew/Memory';
 
 describe('Memory System', () => {
     const testCrewId = 'test-crew-123';
@@ -37,7 +44,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'TestAgent',
                 task: 'Test task description',
-                result: 'Test result'
+                result: 'Test result',
             });
 
             await backend.set(testCrewId, 'test-key', item);
@@ -55,7 +62,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'TestAgent',
                 task: 'Test task',
-                result: 'Test result'
+                result: 'Test result',
             });
 
             await backend.set(testCrewId, 'delete-me', item);
@@ -78,7 +85,7 @@ describe('Memory System', () => {
                 agent: 'TestAgent',
                 task: 'Expired task',
                 result: 'Expired result',
-                expiresAt: Date.now() - 1000 // Expired 1 second ago
+                expiresAt: Date.now() - 1000, // Expired 1 second ago
             });
 
             await backend.set(testCrewId, 'expired', expiredItem);
@@ -89,98 +96,140 @@ describe('Memory System', () => {
         });
 
         it('queries items by agent', async () => {
-            await backend.set(testCrewId, 'item1', createMemoryItem({
-                key: 'item1',
-                taskId: 'task-1',
+            await backend.set(
+                testCrewId,
+                'item1',
+                createMemoryItem({
+                    key: 'item1',
+                    taskId: 'task-1',
+                    agent: 'AgentA',
+                    task: 'Task 1',
+                    result: 'Result 1',
+                }),
+            );
+
+            await backend.set(
+                testCrewId,
+                'item2',
+                createMemoryItem({
+                    key: 'item2',
+                    taskId: 'task-2',
+                    agent: 'AgentB',
+                    task: 'Task 2',
+                    result: 'Result 2',
+                }),
+            );
+
+            await backend.set(
+                testCrewId,
+                'item3',
+                createMemoryItem({
+                    key: 'item3',
+                    taskId: 'task-3',
+                    agent: 'AgentA',
+                    task: 'Task 3',
+                    result: 'Result 3',
+                }),
+            );
+
+            const results = await backend.query(testCrewId, {
                 agent: 'AgentA',
-                task: 'Task 1',
-                result: 'Result 1'
-            }));
-
-            await backend.set(testCrewId, 'item2', createMemoryItem({
-                key: 'item2',
-                taskId: 'task-2',
-                agent: 'AgentB',
-                task: 'Task 2',
-                result: 'Result 2'
-            }));
-
-            await backend.set(testCrewId, 'item3', createMemoryItem({
-                key: 'item3',
-                taskId: 'task-3',
-                agent: 'AgentA',
-                task: 'Task 3',
-                result: 'Result 3'
-            }));
-
-            const results = await backend.query(testCrewId, { agent: 'AgentA' });
+            });
             expect(results.length).toBe(2);
-            expect(results.every(item => item.agent === 'AgentA')).toBe(true);
+            expect(results.every((item) => item.agent === 'AgentA')).toBe(true);
         });
 
         it('queries items by tags', async () => {
-            await backend.set(testCrewId, 'tagged1', createMemoryItem({
-                key: 'tagged1',
-                taskId: 'task-1',
-                agent: 'Agent',
-                task: 'Task',
-                result: 'Result',
-                tags: ['important', 'research']
-            }));
+            await backend.set(
+                testCrewId,
+                'tagged1',
+                createMemoryItem({
+                    key: 'tagged1',
+                    taskId: 'task-1',
+                    agent: 'Agent',
+                    task: 'Task',
+                    result: 'Result',
+                    tags: ['important', 'research'],
+                }),
+            );
 
-            await backend.set(testCrewId, 'tagged2', createMemoryItem({
-                key: 'tagged2',
-                taskId: 'task-2',
-                agent: 'Agent',
-                task: 'Task',
-                result: 'Result',
-                tags: ['research']
-            }));
+            await backend.set(
+                testCrewId,
+                'tagged2',
+                createMemoryItem({
+                    key: 'tagged2',
+                    taskId: 'task-2',
+                    agent: 'Agent',
+                    task: 'Task',
+                    result: 'Result',
+                    tags: ['research'],
+                }),
+            );
 
-            await backend.set(testCrewId, 'untagged', createMemoryItem({
-                key: 'untagged',
-                taskId: 'task-3',
-                agent: 'Agent',
-                task: 'Task',
-                result: 'Result'
-            }));
+            await backend.set(
+                testCrewId,
+                'untagged',
+                createMemoryItem({
+                    key: 'untagged',
+                    taskId: 'task-3',
+                    agent: 'Agent',
+                    task: 'Task',
+                    result: 'Result',
+                }),
+            );
 
-            const results = await backend.query(testCrewId, { tags: ['important'] });
+            const results = await backend.query(testCrewId, {
+                tags: ['important'],
+            });
             expect(results.length).toBe(1);
             expect(results[0].key).toBe('tagged1');
         });
 
         it('queries items by keywords', async () => {
-            await backend.set(testCrewId, 'k1', createMemoryItem({
-                key: 'k1',
-                taskId: 'task-1',
-                agent: 'Agent',
-                task: 'Research AI advancements',
-                result: 'Found new breakthroughs in machine learning'
-            }));
+            await backend.set(
+                testCrewId,
+                'k1',
+                createMemoryItem({
+                    key: 'k1',
+                    taskId: 'task-1',
+                    agent: 'Agent',
+                    task: 'Research AI advancements',
+                    result: 'Found new breakthroughs in machine learning',
+                }),
+            );
 
-            await backend.set(testCrewId, 'k2', createMemoryItem({
-                key: 'k2',
-                taskId: 'task-2',
-                agent: 'Agent',
-                task: 'Write documentation',
-                result: 'Created user guide'
-            }));
+            await backend.set(
+                testCrewId,
+                'k2',
+                createMemoryItem({
+                    key: 'k2',
+                    taskId: 'task-2',
+                    agent: 'Agent',
+                    task: 'Write documentation',
+                    result: 'Created user guide',
+                }),
+            );
 
-            const results = await backend.query(testCrewId, { keywords: ['machine', 'learning'] });
+            const results = await backend.query(testCrewId, {
+                keywords: ['machine', 'learning'],
+            });
             expect(results.length).toBe(1);
             expect(results[0].key).toBe('k1');
         });
 
         it('limits query results', async () => {
             for (let i = 0; i < 10; i++) {
-                await backend.set(testCrewId, `item${i}`, createMemoryItem({
-                    key: `item${i}`,
-                    taskId: `task-${i}`,
-                    agent: 'Agent',
-                    task: `Task ${i}`,
-                    result: `Result ${i}`
-                }));
+                await backend.set(
+                    testCrewId,
+                    `item${i}`,
+                    createMemoryItem({
+                        key: `item${i}`,
+                        taskId: `task-${i}`,
+                        agent: 'Agent',
+                        task: `Task ${i}`,
+                        result: `Result ${i}`,
+                    }),
+                );
             }
 
             const results = await backend.query(testCrewId, { maxItems: 5 });
@@ -188,13 +237,17 @@ describe('Memory System', () => {
         });
 
         it('clears all items for a crew', async () => {
-            await backend.set(testCrewId, 'item1', createMemoryItem({
-                key: 'item1',
-                taskId: 'task-1',
-                agent: 'Agent',
-                task: 'Task',
-                result: 'Result'
-            }));
+            await backend.set(
+                testCrewId,
+                'item1',
+                createMemoryItem({
+                    key: 'item1',
+                    taskId: 'task-1',
+                    agent: 'Agent',
+                    task: 'Task',
+                    result: 'Result',
+                }),
+            );
 
             await backend.clear(testCrewId);
 
@@ -203,21 +256,29 @@ describe('Memory System', () => {
         });
 
         it('isolates memory between crews', async () => {
-            await backend.set('crew-a', 'item', createMemoryItem({
-                key: 'item',
-                taskId: 'task-1',
-                agent: 'Agent',
-                task: 'Task A',
-                result: 'Result A'
-            }));
+            await backend.set(
+                'crew-a',
+                'item',
+                createMemoryItem({
+                    key: 'item',
+                    taskId: 'task-1',
+                    agent: 'Agent',
+                    task: 'Task A',
+                    result: 'Result A',
+                }),
+            );
 
-            await backend.set('crew-b', 'item', createMemoryItem({
-                key: 'item',
-                taskId: 'task-1',
-                agent: 'Agent',
-                task: 'Task B',
-                result: 'Result B'
-            }));
+            await backend.set(
+                'crew-b',
+                'item',
+                createMemoryItem({
+                    key: 'item',
+                    taskId: 'task-1',
+                    agent: 'Agent',
+                    task: 'Task B',
+                    result: 'Result B',
+                }),
+            );
 
             const itemA = await backend.get('crew-a', 'item');
             const itemB = await backend.get('crew-b', 'item');
@@ -261,7 +322,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'TestAgent',
                 task: 'Persistent task',
-                result: 'Persistent result'
+                result: 'Persistent result',
             });
 
             await backend.set(testCrewId, 'persist-test', item);
@@ -291,7 +352,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'Agent',
                 task: 'Task',
-                result: 'Result'
+                result: 'Result',
             });
 
             await backend.set('flush-crew', 'flush-test', item);
@@ -308,7 +369,7 @@ describe('Memory System', () => {
             store = new MemoryStore(new InMemoryBackend(), {
                 maxItems: 100,
                 maxTotalTokens: 10000,
-                autoEvict: false
+                autoEvict: false,
             });
         });
 
@@ -325,7 +386,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'StoreAgent',
                 task: 'Store task',
-                result: 'Store result'
+                result: 'Store result',
             });
 
             expect(item.key).toBe('store-test');
@@ -340,7 +401,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'Agent',
                 task: 'Task',
-                result: 'Result'
+                result: 'Result',
             });
 
             const item1 = await store.get(testCrewId, 'access-test');
@@ -361,7 +422,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'Agent',
                 task: 'Task',
-                result: 'Result'
+                result: 'Result',
             });
 
             await store.get(testCrewId, 'event-test');
@@ -377,24 +438,26 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'QueryAgent',
                 task: 'Query task 1',
-                result: 'Result 1'
+                result: 'Result 1',
             });
 
             await store.set(testCrewId, 'q2', {
                 taskId: 'task-2',
                 agent: 'QueryAgent',
                 task: 'Query task 2',
-                result: 'Result 2'
+                result: 'Result 2',
             });
 
             await store.set(testCrewId, 'q3', {
                 taskId: 'task-3',
                 agent: 'OtherAgent',
                 task: 'Other task',
-                result: 'Other result'
+                result: 'Other result',
             });
 
-            const results = await store.query(testCrewId, { agent: 'QueryAgent' });
+            const results = await store.query(testCrewId, {
+                agent: 'QueryAgent',
+            });
             expect(results.length).toBe(2);
         });
 
@@ -403,27 +466,27 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'AgentX',
                 task: 'Task 1',
-                result: 'Result 1'
+                result: 'Result 1',
             });
 
             await store.set(testCrewId, 's2', {
                 taskId: 'task-2',
                 agent: 'AgentX',
                 task: 'Task 2',
-                result: 'Result 2'
+                result: 'Result 2',
             });
 
             await store.set(testCrewId, 's3', {
                 taskId: 'task-3',
                 agent: 'AgentY',
                 task: 'Task 3',
-                result: 'Result 3'
+                result: 'Result 3',
             });
 
             const stats = await store.getStats(testCrewId);
             expect(stats.itemCount).toBe(3);
-            expect(stats.agentCounts['AgentX']).toBe(2);
-            expect(stats.agentCounts['AgentY']).toBe(1);
+            expect(stats.agentCounts.AgentX).toBe(2);
+            expect(stats.agentCounts.AgentY).toBe(1);
             expect(stats.totalTokens).toBeGreaterThan(0);
         });
 
@@ -432,10 +495,12 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'ContextAgent',
                 task: 'Research AI trends',
-                result: 'Found several emerging trends in artificial intelligence'
+                result: 'Found several emerging trends in artificial intelligence',
             });
 
-            const context = await store.buildContext(testCrewId, { maxTokens: 1000 });
+            const context = await store.buildContext(testCrewId, {
+                maxTokens: 1000,
+            });
 
             expect(context).toContain('Previous Task Results');
             expect(context).toContain('ContextAgent');
@@ -445,7 +510,7 @@ describe('Memory System', () => {
         it('evicts items when over limits', async () => {
             const limitedStore = new MemoryStore(new InMemoryBackend(), {
                 maxItems: 3,
-                autoEvict: true
+                autoEvict: true,
             });
 
             // Add 5 items
@@ -454,7 +519,7 @@ describe('Memory System', () => {
                     taskId: `task-${i}`,
                     agent: 'Agent',
                     task: `Task ${i}`,
-                    result: `Result ${i}`
+                    result: `Result ${i}`,
                 });
             }
 
@@ -469,7 +534,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'Agent',
                 task: 'Task',
-                result: 'Result'
+                result: 'Result',
             });
 
             await store.clear(testCrewId);
@@ -479,19 +544,29 @@ describe('Memory System', () => {
         });
 
         it('merges items when merge option is set', async () => {
-            const item1 = await store.set(testCrewId, 'merge-test', {
-                taskId: 'task-1',
-                agent: 'Agent',
-                task: 'Initial task',
-                result: 'Initial result'
-            }, { tags: ['original'] });
+            const item1 = await store.set(
+                testCrewId,
+                'merge-test',
+                {
+                    taskId: 'task-1',
+                    agent: 'Agent',
+                    task: 'Initial task',
+                    result: 'Initial result',
+                },
+                { tags: ['original'] },
+            );
 
-            const item2 = await store.set(testCrewId, 'merge-test', {
-                taskId: 'task-1',
-                agent: 'Agent',
-                task: 'Updated task',
-                result: 'Updated result'
-            }, { merge: true });
+            const item2 = await store.set(
+                testCrewId,
+                'merge-test',
+                {
+                    taskId: 'task-1',
+                    agent: 'Agent',
+                    task: 'Updated task',
+                    result: 'Updated result',
+                },
+                { merge: true },
+            );
 
             // Merged item should preserve original tags
             expect(item2.tags).toContain('original');
@@ -503,7 +578,7 @@ describe('Memory System', () => {
             // Use JSONFileBackend to verify deferred writes
             const backend = new JSONFileBackend({
                 basePath: mkdtempSync(join(tmpdir(), 'tiny-crew-flush-')),
-                createDir: true
+                createDir: true,
             });
 
             const flushStore = new MemoryStore(backend, { autoEvict: false });
@@ -512,7 +587,7 @@ describe('Memory System', () => {
                 taskId: 'task-1',
                 agent: 'Agent',
                 task: 'Task',
-                result: 'Result'
+                result: 'Result',
             });
 
             // Multiple reads should not trigger multiple writes
@@ -530,8 +605,8 @@ describe('Memory System', () => {
 
             // Verify access count is persisted after flush
             const newBackend = new JSONFileBackend({
-                basePath: backend['basePath'],
-                createDir: false
+                basePath: backend.basePath,
+                createDir: false,
             });
             const newStore = new MemoryStore(newBackend, { autoEvict: false });
             const reloadedItem = await newStore.get(testCrewId, 'flush-test');
@@ -551,7 +626,7 @@ describe('Memory System', () => {
                 taskId: 'task-123',
                 agent: 'HelperAgent',
                 task: 'Test task',
-                result: 'Test result'
+                result: 'Test result',
             });
 
             expect(item.key).toBe('helper-test');
@@ -565,7 +640,10 @@ describe('Memory System', () => {
 
         it('estimateTokens returns reasonable estimates', () => {
             const shortText = 'Hello world';
-            const longText = 'This is a longer text that should have more tokens. '.repeat(10);
+            const longText =
+                'This is a longer text that should have more tokens. '.repeat(
+                    10,
+                );
 
             const shortTokens = estimateTokens(shortText);
             const longTokens = estimateTokens(longText);

@@ -1,4 +1,4 @@
-import type Logger from '@/utils/logger.ts';
+import type Logger from '@tinycrew/utils/logger';
 
 export interface RetryOptions {
     maxAttempts?: number;

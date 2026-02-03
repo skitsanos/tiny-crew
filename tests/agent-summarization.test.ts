@@ -3,14 +3,16 @@
  */
 
 import { describe, expect, it } from 'bun:test';
+import type OpenAI from 'openai';
 import { Agent } from '../src/Agent';
 import { AgentEvent } from '../src/utils/types';
-import type OpenAI from 'openai';
 
 /**
  * Create a mock OpenAI client for testing
  */
-function createMockOpenAIClient(responses: string[] = ['Mock response']): OpenAI {
+function createMockOpenAIClient(
+    responses: string[] = ['Mock response'],
+): OpenAI {
     let callCount = 0;
     return {
         responses: {
@@ -24,14 +26,12 @@ function createMockOpenAIClient(responses: string[] = ['Mock response']): OpenAI
                         {
                             type: 'message',
                             role: 'assistant',
-                            content: [
-                                { type: 'output_text', text: response }
-                            ]
-                        }
-                    ]
+                            content: [{ type: 'output_text', text: response }],
+                        },
+                    ],
                 };
-            }
-        }
+            },
+        },
     } as unknown as OpenAI;
 }
 
@@ -39,21 +39,27 @@ describe('Agent Conversation Summarization', () => {
     describe('Configuration', () => {
         it('summarization is disabled by default', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal'
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                },
+                client,
+            );
 
             expect(agent.isSummarizationEnabled()).toBe(false);
         });
 
         it('summarization can be enabled via config', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                },
+                client,
+            );
 
             expect(agent.isSummarizationEnabled()).toBe(true);
         });
@@ -62,10 +68,13 @@ describe('Agent Conversation Summarization', () => {
     describe('estimateHistoryTokens()', () => {
         it('estimates tokens based on character count', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal'
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                },
+                client,
+            );
 
             // Add messages with known length
             agent.addToHistory({ role: 'user', content: 'Hello' }); // 5 chars
@@ -77,10 +86,13 @@ describe('Agent Conversation Summarization', () => {
 
         it('includes existing summary in token estimate', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal'
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                },
+                client,
+            );
 
             // Set a summary
             agent.setConversationSummary('This is a test summary'); // 22 chars
@@ -94,10 +106,13 @@ describe('Agent Conversation Summarization', () => {
 
         it('returns 0 for empty history', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal'
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                },
+                client,
+            );
 
             expect(agent.estimateHistoryTokens()).toBe(0);
         });
@@ -106,20 +121,26 @@ describe('Agent Conversation Summarization', () => {
     describe('getConversationSummary()', () => {
         it('returns empty string initially', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal'
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                },
+                client,
+            );
 
             expect(agent.getConversationSummary()).toBe('');
         });
 
         it('returns set summary', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal'
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                },
+                client,
+            );
 
             agent.setConversationSummary('Test summary');
             expect(agent.getConversationSummary()).toBe('Test summary');
@@ -129,11 +150,14 @@ describe('Agent Conversation Summarization', () => {
     describe('summarizeHistory()', () => {
         it('does not summarize if history is too short', async () => {
             const client = createMockOpenAIClient(['Summary result']);
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                },
+                client,
+            );
 
             // Add only a few messages (less than keepRecentCount default of 10)
             agent.addToHistory({ role: 'user', content: 'Message 1' });
@@ -147,18 +171,25 @@ describe('Agent Conversation Summarization', () => {
         });
 
         it('summarizes old messages and keeps recent ones', async () => {
-            const summaryText = 'User discussed multiple topics including A, B, and C.';
+            const summaryText =
+                'User discussed multiple topics including A, B, and C.';
             const client = createMockOpenAIClient([summaryText]);
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                },
+                client,
+            );
 
             // Add many messages
             for (let i = 0; i < 15; i++) {
                 agent.addToHistory({ role: 'user', content: `Message ${i}` });
-                agent.addToHistory({ role: 'assistant', content: `Response ${i}` });
+                agent.addToHistory({
+                    role: 'assistant',
+                    content: `Response ${i}`,
+                });
             }
 
             expect(agent.getHistoryLength()).toBe(30);
@@ -177,19 +208,28 @@ describe('Agent Conversation Summarization', () => {
         it('keeps system message at the start', async () => {
             const summaryText = 'Conversation summary';
             const client = createMockOpenAIClient([summaryText]);
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                },
+                client,
+            );
 
             // Add system message first
-            agent.addToHistory({ role: 'system', content: 'System instructions' });
+            agent.addToHistory({
+                role: 'system',
+                content: 'System instructions',
+            });
 
             // Add many messages
             for (let i = 0; i < 15; i++) {
                 agent.addToHistory({ role: 'user', content: `Message ${i}` });
-                agent.addToHistory({ role: 'assistant', content: `Response ${i}` });
+                agent.addToHistory({
+                    role: 'assistant',
+                    content: `Response ${i}`,
+                });
             }
 
             await agent.summarizeHistory(10);
@@ -203,16 +243,22 @@ describe('Agent Conversation Summarization', () => {
         it('emits HISTORY_SUMMARIZED event', async () => {
             const summaryText = 'Summary of conversation';
             const client = createMockOpenAIClient([summaryText]);
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                },
+                client,
+            );
 
             // Add messages
             for (let i = 0; i < 15; i++) {
                 agent.addToHistory({ role: 'user', content: `Message ${i}` });
-                agent.addToHistory({ role: 'assistant', content: `Response ${i}` });
+                agent.addToHistory({
+                    role: 'assistant',
+                    content: `Response ${i}`,
+                });
             }
 
             let eventData: any = null;
@@ -232,11 +278,14 @@ describe('Agent Conversation Summarization', () => {
 
         it('uses custom keepRecentCount', async () => {
             const client = createMockOpenAIClient(['Summary']);
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                },
+                client,
+            );
 
             // Add messages
             for (let i = 0; i < 25; i++) {
@@ -255,9 +304,12 @@ describe('Agent Conversation Summarization', () => {
                 responses: {
                     create: async (request: any) => {
                         // Capture the prompt
-                        const userMessage = request.input.find((m: any) => m.role === 'user');
+                        const userMessage = request.input.find(
+                            (m: any) => m.role === 'user',
+                        );
                         if (userMessage) {
-                            summarizationPrompt = userMessage.content?.[0]?.text || '';
+                            summarizationPrompt =
+                                userMessage.content?.[0]?.text || '';
                         }
                         return {
                             id: 'mock-response',
@@ -266,19 +318,27 @@ describe('Agent Conversation Summarization', () => {
                                 {
                                     type: 'message',
                                     role: 'assistant',
-                                    content: [{ type: 'output_text', text: 'New summary' }]
-                                }
-                            ]
+                                    content: [
+                                        {
+                                            type: 'output_text',
+                                            text: 'New summary',
+                                        },
+                                    ],
+                                },
+                            ],
                         };
-                    }
-                }
+                    },
+                },
             } as unknown as OpenAI;
 
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                },
+                client,
+            );
 
             // Set existing summary
             agent.setConversationSummary('Previous context about topic X');
@@ -291,17 +351,22 @@ describe('Agent Conversation Summarization', () => {
             await agent.summarizeHistory(5);
 
             // Should include previous summary in the prompt
-            expect(summarizationPrompt).toContain('Previous context about topic X');
+            expect(summarizationPrompt).toContain(
+                'Previous context about topic X',
+            );
         });
     });
 
     describe('exportConversationState()', () => {
         it('includes summary in exported state', () => {
             const client = createMockOpenAIClient();
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal'
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                },
+                client,
+            );
 
             agent.setConversationSummary('Test summary');
             agent.addToHistory({ role: 'user', content: 'Hello' });
@@ -318,24 +383,27 @@ describe('Agent Conversation Summarization', () => {
         it('triggers summarization when threshold exceeded and trimming needed', async () => {
             const summaryText = 'Auto-generated summary';
             const client = createMockOpenAIClient(['Response', summaryText]);
-            const agent = new Agent({
-                name: 'TestAgent',
-                goal: 'Test goal',
-                enableSummarization: true,
-                summarizationThreshold: 100, // Low threshold for testing
-                maxHistoryMessages: 10
-            }, client);
+            const agent = new Agent(
+                {
+                    name: 'TestAgent',
+                    goal: 'Test goal',
+                    enableSummarization: true,
+                    summarizationThreshold: 100, // Low threshold for testing
+                    maxHistoryMessages: 10,
+                },
+                client,
+            );
 
             // Add many messages to exceed both maxHistory and threshold
             for (let i = 0; i < 15; i++) {
                 agent.addToHistory({
                     role: 'user',
-                    content: `This is a longer message number ${i} with more content to exceed token threshold`
+                    content: `This is a longer message number ${i} with more content to exceed token threshold`,
                 });
             }
 
             // Wait for any async trimming to complete
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
 
             // History should have been summarized due to exceeding threshold
             // The exact behavior depends on async handling
@@ -358,21 +426,26 @@ describe('Summarization Model Configuration', () => {
                             {
                                 type: 'message',
                                 role: 'assistant',
-                                content: [{ type: 'output_text', text: 'Summary' }]
-                            }
-                        ]
+                                content: [
+                                    { type: 'output_text', text: 'Summary' },
+                                ],
+                            },
+                        ],
                     };
-                }
-            }
+                },
+            },
         } as unknown as OpenAI;
 
-        const agent = new Agent({
-            name: 'TestAgent',
-            goal: 'Test goal',
-            model: 'gpt-4',
-            summarizationModel: 'gpt-4o-mini',
-            enableSummarization: true
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'TestAgent',
+                goal: 'Test goal',
+                model: 'gpt-4',
+                summarizationModel: 'gpt-4o-mini',
+                enableSummarization: true,
+            },
+            client,
+        );
 
         // Add messages
         for (let i = 0; i < 15; i++) {
@@ -397,20 +470,25 @@ describe('Summarization Model Configuration', () => {
                             {
                                 type: 'message',
                                 role: 'assistant',
-                                content: [{ type: 'output_text', text: 'Summary' }]
-                            }
-                        ]
+                                content: [
+                                    { type: 'output_text', text: 'Summary' },
+                                ],
+                            },
+                        ],
                     };
-                }
-            }
+                },
+            },
         } as unknown as OpenAI;
 
-        const agent = new Agent({
-            name: 'TestAgent',
-            goal: 'Test goal',
-            model: 'gpt-4-turbo',
-            enableSummarization: true
-        }, client);
+        const agent = new Agent(
+            {
+                name: 'TestAgent',
+                goal: 'Test goal',
+                model: 'gpt-4-turbo',
+                enableSummarization: true,
+            },
+            client,
+        );
 
         // Add messages
         for (let i = 0; i < 15; i++) {

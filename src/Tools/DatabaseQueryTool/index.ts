@@ -1,4 +1,4 @@
-import type { Tool } from '@/utils/types.ts';
+import type { Tool } from '@tinycrew/utils/types';
 
 export class Database {
     async query(_query: string): Promise<any> {

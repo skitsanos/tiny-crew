@@ -5,8 +5,8 @@ The MessageBus system enables agents to communicate with each other asynchronous
 ## Quick Start
 
 ```typescript
-import { Agent } from '@/Agent';
-import { MessageBus } from '@/Agent/MessageBus';
+import { Agent } from '@tinycrew/Agent';
+import { MessageBus } from '@tinycrew/Agent/MessageBus';
 import OpenAI from 'openai';
 
 const client = new OpenAI();
@@ -37,7 +37,7 @@ The `MessageBus` is the central hub for agent communication. It handles message 
 ### Creating a MessageBus
 
 ```typescript
-import { MessageBus, getDefaultMessageBus } from '@/Agent/MessageBus';
+import { MessageBus, getDefaultMessageBus } from '@tinycrew/Agent/MessageBus';
 
 // Create a new bus
 const bus = new MessageBus();
@@ -49,7 +49,7 @@ const defaultBus = getDefaultMessageBus();
 ### MessageBus Events
 
 ```typescript
-import { MessageBusEvent } from '@/Agent/MessageBus';
+import { MessageBusEvent } from '@tinycrew/Agent/MessageBus';
 
 bus.on(MessageBusEvent.MESSAGE_SENT, (data) => {
     console.log(`Message sent: ${data.message.id}`);
@@ -256,7 +256,7 @@ Within the same priority, messages are delivered in timestamp order (FIFO).
 Agents emit events for messaging:
 
 ```typescript
-import { AgentEvent } from '@/utils/types';
+import { AgentEvent } from '@tinycrew/utils/types';
 
 agent.on(AgentEvent.MESSAGE_SENT, (data) => {
     console.log(`Sent to ${data.to}: ${data.message.content}`);
@@ -380,8 +380,8 @@ interface AgentMessage {
 ## Example: Multi-Agent System
 
 ```typescript
-import { Agent } from '@/Agent';
-import { MessageBus } from '@/Agent/MessageBus';
+import { Agent } from '@tinycrew/Agent';
+import { MessageBus } from '@tinycrew/Agent/MessageBus';
 import OpenAI from 'openai';
 
 async function main() {

@@ -69,7 +69,7 @@ export function createMockOpenAIClient(config: MockResponseConfig = {}): {
         responses = ['Mock response'],
         toolCalls,
         delay = 0,
-        error
+        error,
     } = config;
 
     let callCount = 0;
@@ -77,7 +77,7 @@ export function createMockOpenAIClient(config: MockResponseConfig = {}): {
         totalCalls: 0,
         lastModel: null,
         lastInput: null,
-        callHistory: []
+        callHistory: [],
     };
 
     const mockClient = {
@@ -96,12 +96,12 @@ export function createMockOpenAIClient(config: MockResponseConfig = {}): {
                 stats.callHistory.push({
                     model: params.model,
                     input: params.input,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
                 });
 
                 // Simulate delay if configured
                 if (delay > 0) {
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                    await new Promise((resolve) => setTimeout(resolve, delay));
                 }
 
                 // Throw error if configured
@@ -123,7 +123,7 @@ export function createMockOpenAIClient(config: MockResponseConfig = {}): {
                             type: 'function_call',
                             id: `call_${Date.now()}_${Math.random().toString(36).slice(2)}`,
                             name: tc.name,
-                            arguments: JSON.stringify(tc.arguments)
+                            arguments: JSON.stringify(tc.arguments),
                         });
                     }
                 }
@@ -132,7 +132,7 @@ export function createMockOpenAIClient(config: MockResponseConfig = {}): {
                 output.push({
                     type: 'message',
                     role: 'assistant',
-                    content: [{ type: 'output_text', text: responseText }]
+                    content: [{ type: 'output_text', text: responseText }],
                 });
 
                 return {
@@ -145,11 +145,11 @@ export function createMockOpenAIClient(config: MockResponseConfig = {}): {
                     usage: {
                         input_tokens: 100,
                         output_tokens: 50,
-                        total_tokens: 150
-                    }
+                        total_tokens: 150,
+                    },
                 } as Response;
-            }
-        }
+            },
+        },
     } as unknown as OpenAI;
 
     return { client: mockClient, stats };
@@ -164,7 +164,7 @@ export function createMockJsonClient(jsonResponses: object[]): {
     client: OpenAI;
     stats: MockClientStats;
 } {
-    const responses = jsonResponses.map(obj => JSON.stringify(obj));
+    const responses = jsonResponses.map((obj) => JSON.stringify(obj));
     return createMockOpenAIClient({ responses });
 }
 
@@ -188,14 +188,14 @@ export function createMockErrorClient(error: Error): {
  */
 export function createMockToolClient(
     toolCalls: Array<{ name: string; arguments: Record<string, any> }>,
-    finalResponse: string = 'Task completed'
+    finalResponse: string = 'Task completed',
 ): {
     client: OpenAI;
     stats: MockClientStats;
 } {
     return createMockOpenAIClient({
         toolCalls,
-        responses: [finalResponse]
+        responses: [finalResponse],
     });
 }
 
@@ -206,7 +206,7 @@ export function createMockToolClient(
  * @param conversationPairs Array of [userPattern, response] pairs
  */
 export function createConversationalMockClient(
-    conversationPairs: Array<[RegExp | string, string]>
+    conversationPairs: Array<[RegExp | string, string]>,
 ): {
     client: OpenAI;
     stats: MockClientStats;
@@ -216,7 +216,7 @@ export function createConversationalMockClient(
         totalCalls: 0,
         lastModel: null,
         lastInput: null,
-        callHistory: []
+        callHistory: [],
     };
 
     const getResponseFor = (input: string): string => {
@@ -229,19 +229,22 @@ export function createConversationalMockClient(
                 return response;
             }
         }
-        return 'I don\'t understand.';
+        return "I don't understand.";
     };
 
     const mockClient = {
         responses: {
-            create: async (params: { model: string; input: any[] }): Promise<Response> => {
+            create: async (params: {
+                model: string;
+                input: any[];
+            }): Promise<Response> => {
                 stats.totalCalls++;
                 stats.lastModel = params.model;
                 stats.lastInput = params.input;
                 stats.callHistory.push({
                     model: params.model,
                     input: params.input,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
                 });
 
                 // Extract user message from input
@@ -257,20 +260,24 @@ export function createConversationalMockClient(
                     object: 'response',
                     created_at: Date.now(),
                     model: params.model,
-                    output: [{
-                        type: 'message',
-                        role: 'assistant',
-                        content: [{ type: 'output_text', text: responseText }]
-                    }],
+                    output: [
+                        {
+                            type: 'message',
+                            role: 'assistant',
+                            content: [
+                                { type: 'output_text', text: responseText },
+                            ],
+                        },
+                    ],
                     output_text: responseText,
                     usage: {
                         input_tokens: 100,
                         output_tokens: 50,
-                        total_tokens: 150
-                    }
+                        total_tokens: 150,
+                    },
                 } as Response;
-            }
-        }
+            },
+        },
     } as unknown as OpenAI;
 
     return { client: mockClient, stats, getResponseFor };

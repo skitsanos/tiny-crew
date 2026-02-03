@@ -1,15 +1,14 @@
-import OpenAI from 'openai';
-import Logger from '@/utils/logger.ts';
-import TextPromptToolFactory from '@/Tools/TextPromptToolFactory';
+import TextPromptToolFactory from '@tinycrew/Tools/TextPromptToolFactory';
+import Logger from '@tinycrew/utils/logger';
 import dedent from 'dedent';
-
+import OpenAI from 'openai';
 
 const logger = new Logger('TextToolsTest', { colorize: true });
 
 async function testTextTools() {
     // Initialize OpenAI client
     const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY
+        apiKey: process.env.OPENAI_API_KEY,
     });
 
     // Create a factory instance
@@ -29,7 +28,7 @@ async function testTextTools() {
 
     // Test 1: Basic summarization
     const summarizer = factory.createSummarizer({
-        wordCount: 50
+        wordCount: 50,
     });
 
     logger.info('Testing summarizer...');
@@ -45,7 +44,7 @@ async function testTextTools() {
     const bulletSummarizer = factory.createSummarizer({
         name: 'BulletSummarizer',
         bullets: true,
-        wordCount: 75
+        wordCount: 75,
     });
 
     logger.info('Testing bullet point summarizer...');
@@ -53,8 +52,9 @@ async function testTextTools() {
         const bulletSummary = await bulletSummarizer.use({
             text: sampleText,
             options: {
-                instructions: 'Focus on the challenges and solutions mentioned in the text.'
-            }
+                instructions:
+                    'Focus on the challenges and solutions mentioned in the text.',
+            },
         });
         console.log('\n--- BULLET SUMMARY ---\n');
         console.log(bulletSummary);
@@ -71,8 +71,9 @@ async function testTextTools() {
             text: sampleText,
             targetLanguage: 'French',
             options: {
-                additionalInstructions: 'Use simple language appropriate for a general audience.'
-            }
+                additionalInstructions:
+                    'Use simple language appropriate for a general audience.',
+            },
         });
         console.log('\n--- FRENCH TRANSLATION ---\n');
         console.log(translation);
@@ -95,7 +96,7 @@ async function testTextTools() {
     // Test 5: Entity extraction
     const entityExtractor = factory.createExtractor({
         extractionType: 'entities',
-        outputFormat: 'json'
+        outputFormat: 'json',
     });
 
     logger.info('Testing entity extractor...');
@@ -121,8 +122,9 @@ Text to explain:
 Additional requirements:
 {options.requirements}
         `,
-        systemPrompt: 'You are an expert at explaining complex topics in accessible ways without sacrificing accuracy.',
-        temperature: 0.5
+        systemPrompt:
+            'You are an expert at explaining complex topics in accessible ways without sacrificing accuracy.',
+        temperature: 0.5,
     });
 
     logger.info('Testing concept explainer...');
@@ -132,8 +134,9 @@ Additional requirements:
             topic: 'environmental issue',
             audience: '12-year-old student',
             options: {
-                requirements: 'Include at least one analogy that would resonate with children.'
-            }
+                requirements:
+                    'Include at least one analogy that would resonate with children.',
+            },
         });
         console.log('\n--- SIMPLIFIED EXPLANATION ---\n');
         console.log(explanation);
@@ -143,7 +146,7 @@ Additional requirements:
 }
 
 // Run the tests
-testTextTools().catch(error => {
+testTextTools().catch((error) => {
     logger.error('Tests failed:', error);
     process.exit(1);
 });

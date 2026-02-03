@@ -1,5 +1,5 @@
-import Logger from '@/utils/logger.ts';
-import type { Tool, ToolSchema } from '@/utils/types.ts';
+import Logger from '@tinycrew/utils/logger';
+import type { Tool, ToolSchema } from '@tinycrew/utils/types';
 
 // Optional dependencies - loaded dynamically
 let JSDOM: typeof import('jsdom').JSDOM | null = null;

@@ -3,9 +3,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { Agent } from '@/Agent';
-import { MessageBus, MessageBusEvent, getDefaultMessageBus, resetDefaultMessageBus } from '@/Agent/MessageBus';
-import { AgentEvent } from '@/utils/types';
+import { Agent } from '@tinycrew/Agent';
+import {
+    getDefaultMessageBus,
+    MessageBus,
+    MessageBusEvent,
+    resetDefaultMessageBus,
+} from '@tinycrew/Agent/MessageBus';
+import { AgentEvent } from '@tinycrew/utils/types';
 
 // Mock OpenAI client (not used for messaging tests but required by Agent)
 const mockClient = {
@@ -13,9 +18,9 @@ const mockClient = {
         create: mock(async () => ({
             id: 'resp_123',
             output: [],
-            output_text: 'OK'
-        }))
-    }
+            output_text: 'OK',
+        })),
+    },
 } as any;
 
 describe('MessageBus', () => {
@@ -93,7 +98,7 @@ describe('MessageBus', () => {
             bus.send('Sender', 'Receiver', 'Hello!');
 
             // Allow async processing
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(received).not.toBeNull();
             expect(received.content).toBe('Hello!');
@@ -121,10 +126,10 @@ describe('MessageBus', () => {
             });
 
             bus.send('Sender', 'Receiver', 'With metadata', {
-                metadata: { key: 'value' }
+                metadata: { key: 'value' },
             });
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(received.metadata).toEqual({ key: 'value' });
         });
@@ -138,7 +143,7 @@ describe('MessageBus', () => {
 
             bus.send('Sender', 'Receiver', 'Request', { type: 'request' });
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(received.type).toBe('request');
         });
@@ -152,7 +157,7 @@ describe('MessageBus', () => {
 
             bus.send('Sender', 'Receiver', 'Urgent!', { priority: 'urgent' });
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(received.priority).toBe('urgent');
         });
@@ -175,7 +180,7 @@ describe('MessageBus', () => {
                 receivedMessages.push(ctx.message.content);
             });
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(receivedMessages.length).toBe(2);
             expect(receivedMessages).toContain('Message 1');
@@ -188,7 +193,7 @@ describe('MessageBus', () => {
 
             bus.registerAgent('Agent', () => {});
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(bus.getQueueLength('Agent')).toBe(0);
         });
@@ -217,7 +222,7 @@ describe('MessageBus', () => {
 
             bus.send('Requester', 'Responder', 'Hello', { type: 'request' });
 
-            await new Promise(resolve => setTimeout(resolve, 20));
+            await new Promise((resolve) => setTimeout(resolve, 20));
 
             expect(replyReceived).not.toBeNull();
             expect(replyReceived.content).toBe('Got your message!');
@@ -229,7 +234,11 @@ describe('MessageBus', () => {
                 ctx.reply('Response content');
             });
 
-            const reply = await bus.sendAndWait('Requester', 'Responder', 'Request');
+            const reply = await bus.sendAndWait(
+                'Requester',
+                'Responder',
+                'Request',
+            );
 
             expect(reply.content).toBe('Response content');
             expect(reply.type).toBe('response');
@@ -256,18 +265,26 @@ describe('MessageBus', () => {
             bus.registerAgent('Sender', () => {
                 received.push('Sender received - should not happen');
             });
-            bus.registerAgent('AgentA', () => { received.push('A'); });
-            bus.registerAgent('AgentB', () => { received.push('B'); });
-            bus.registerAgent('AgentC', () => { received.push('C'); });
+            bus.registerAgent('AgentA', () => {
+                received.push('A');
+            });
+            bus.registerAgent('AgentB', () => {
+                received.push('B');
+            });
+            bus.registerAgent('AgentC', () => {
+                received.push('C');
+            });
 
             bus.broadcast('Sender', 'Broadcast message');
 
-            await new Promise(resolve => setTimeout(resolve, 20));
+            await new Promise((resolve) => setTimeout(resolve, 20));
 
             expect(received).toContain('A');
             expect(received).toContain('B');
             expect(received).toContain('C');
-            expect(received).not.toContain('Sender received - should not happen');
+            expect(received).not.toContain(
+                'Sender received - should not happen',
+            );
         });
 
         it('sets message type to broadcast', async () => {
@@ -279,7 +296,7 @@ describe('MessageBus', () => {
 
             bus.broadcast('Sender', 'Hello all');
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(receivedType).toBe('broadcast');
         });
@@ -289,13 +306,19 @@ describe('MessageBus', () => {
         it('sends to multiple recipients', async () => {
             const received: string[] = [];
 
-            bus.registerAgent('A', () => { received.push('A'); });
-            bus.registerAgent('B', () => { received.push('B'); });
-            bus.registerAgent('C', () => { received.push('C'); });
+            bus.registerAgent('A', () => {
+                received.push('A');
+            });
+            bus.registerAgent('B', () => {
+                received.push('B');
+            });
+            bus.registerAgent('C', () => {
+                received.push('C');
+            });
 
             bus.send('Sender', ['A', 'C'], 'Multi-cast');
 
-            await new Promise(resolve => setTimeout(resolve, 20));
+            await new Promise((resolve) => setTimeout(resolve, 20));
 
             expect(received).toContain('A');
             expect(received).toContain('C');
@@ -337,12 +360,12 @@ describe('Agent Messaging', () => {
 
         agentA = new Agent(
             { name: 'AgentA', goal: 'Test agent A' },
-            mockClient
+            mockClient,
         );
 
         agentB = new Agent(
             { name: 'AgentB', goal: 'Test agent B' },
-            mockClient
+            mockClient,
         );
     });
 
@@ -406,7 +429,7 @@ describe('Agent Messaging', () => {
 
             agentA.sendMessage('AgentB', 'Hello from A!');
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(received).not.toBeNull();
             expect(received.content).toBe('Hello from A!');
@@ -415,7 +438,7 @@ describe('Agent Messaging', () => {
 
         it('throws if not connected to bus', () => {
             expect(() => agentA.sendMessage('AgentB', 'Hello')).toThrow(
-                'Agent is not connected to a message bus'
+                'Agent is not connected to a message bus',
             );
         });
 
@@ -434,19 +457,26 @@ describe('Agent Messaging', () => {
         });
 
         it('sends to multiple recipients', async () => {
-            const agentC = new Agent({ name: 'AgentC', goal: 'Test' }, mockClient);
+            const agentC = new Agent(
+                { name: 'AgentC', goal: 'Test' },
+                mockClient,
+            );
 
             agentA.connectToMessageBus(bus);
             agentB.connectToMessageBus(bus);
             agentC.connectToMessageBus(bus);
 
             const received: string[] = [];
-            agentB.onMessage(() => { received.push('B'); });
-            agentC.onMessage(() => { received.push('C'); });
+            agentB.onMessage(() => {
+                received.push('B');
+            });
+            agentC.onMessage(() => {
+                received.push('C');
+            });
 
             agentA.sendMessage(['AgentB', 'AgentC'], 'Multi-message');
 
-            await new Promise(resolve => setTimeout(resolve, 20));
+            await new Promise((resolve) => setTimeout(resolve, 20));
 
             expect(received).toContain('B');
             expect(received).toContain('C');
@@ -486,19 +516,26 @@ describe('Agent Messaging', () => {
 
     describe('broadcastMessage', () => {
         it('broadcasts to all connected agents', async () => {
-            const agentC = new Agent({ name: 'AgentC', goal: 'Test' }, mockClient);
+            const agentC = new Agent(
+                { name: 'AgentC', goal: 'Test' },
+                mockClient,
+            );
 
             agentA.connectToMessageBus(bus);
             agentB.connectToMessageBus(bus);
             agentC.connectToMessageBus(bus);
 
             const received: string[] = [];
-            agentB.onMessage(() => { received.push('B'); });
-            agentC.onMessage(() => { received.push('C'); });
+            agentB.onMessage(() => {
+                received.push('B');
+            });
+            agentC.onMessage(() => {
+                received.push('C');
+            });
 
             agentA.broadcastMessage('Announcement!');
 
-            await new Promise(resolve => setTimeout(resolve, 20));
+            await new Promise((resolve) => setTimeout(resolve, 20));
 
             expect(received).toContain('B');
             expect(received).toContain('C');
@@ -517,7 +554,7 @@ describe('Agent Messaging', () => {
 
             agentA.broadcastMessage('Hello all');
 
-            await new Promise(resolve => setTimeout(resolve, 20));
+            await new Promise((resolve) => setTimeout(resolve, 20));
 
             expect(senderReceived).toBe(false);
         });
@@ -535,7 +572,7 @@ describe('Agent Messaging', () => {
 
             agentA.sendMessage('AgentB', 'Test message');
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(received).not.toBeNull();
             expect(received.content).toBe('Test message');
@@ -548,12 +585,16 @@ describe('Agent Messaging', () => {
             let handler1Called = false;
             let handler2Called = false;
 
-            agentB.onMessage(() => { handler1Called = true; });
-            agentB.onMessage(() => { handler2Called = true; });
+            agentB.onMessage(() => {
+                handler1Called = true;
+            });
+            agentB.onMessage(() => {
+                handler2Called = true;
+            });
 
             agentA.sendMessage('AgentB', 'Test');
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(handler1Called).toBe(true);
             expect(handler2Called).toBe(true);
@@ -569,13 +610,13 @@ describe('Agent Messaging', () => {
             });
 
             agentA.sendMessage('AgentB', 'First');
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
             expect(callCount).toBe(1);
 
             unsubscribe();
 
             agentA.sendMessage('AgentB', 'Second');
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
             expect(callCount).toBe(1); // Still 1, handler was removed
         });
 
@@ -590,7 +631,7 @@ describe('Agent Messaging', () => {
 
             agentA.sendMessage('AgentB', 'Hello');
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 10));
 
             expect(eventData).not.toBeNull();
             expect(eventData.from).toBe('AgentA');
@@ -638,12 +679,12 @@ describe('Agent Messaging Integration', () => {
     it('supports request-response pattern', async () => {
         const calculator = new Agent(
             { name: 'Calculator', goal: 'Perform calculations' },
-            mockClient
+            mockClient,
         );
 
         const requester = new Agent(
             { name: 'Requester', goal: 'Request calculations' },
-            mockClient
+            mockClient,
         );
 
         calculator.connectToMessageBus(bus);
@@ -664,8 +705,8 @@ describe('Agent Messaging Integration', () => {
             'Calculate sum',
             {
                 type: 'request',
-                metadata: { numbers: [1, 2, 3, 4, 5] }
-            }
+                metadata: { numbers: [1, 2, 3, 4, 5] },
+            },
         );
 
         expect(reply.metadata?.result).toBe(15);
@@ -675,9 +716,18 @@ describe('Agent Messaging Integration', () => {
     });
 
     it('supports conversation handoff', async () => {
-        const agentA = new Agent({ name: 'AgentA', goal: 'Initial handler' }, mockClient);
-        const agentB = new Agent({ name: 'AgentB', goal: 'Specialist' }, mockClient);
-        const agentC = new Agent({ name: 'Coordinator', goal: 'Coordinate' }, mockClient);
+        const agentA = new Agent(
+            { name: 'AgentA', goal: 'Initial handler' },
+            mockClient,
+        );
+        const agentB = new Agent(
+            { name: 'AgentB', goal: 'Specialist' },
+            mockClient,
+        );
+        const agentC = new Agent(
+            { name: 'Coordinator', goal: 'Coordinate' },
+            mockClient,
+        );
 
         agentA.connectToMessageBus(bus);
         agentB.connectToMessageBus(bus);
@@ -698,11 +748,11 @@ describe('Agent Messaging Integration', () => {
             type: 'handoff',
             metadata: {
                 conversationHistory: ['Hello', 'How can I help?'],
-                context: 'User needs specialist assistance'
-            }
+                context: 'User needs specialist assistance',
+            },
         });
 
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
         expect(handoffReceived).toBe(true);
         expect(handoffData.context).toBe('User needs specialist assistance');

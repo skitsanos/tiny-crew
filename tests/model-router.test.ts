@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { ModelRouter } from '../src/ModelRouter';
 import type { ModelPurpose } from '../src/utils/types';
 
@@ -28,7 +28,8 @@ describe('ModelRouter', () => {
             delete process.env.DEFAULT_MODEL;
         }
         if (originalEnv.MODEL_AGENT_SELECTION !== undefined) {
-            process.env.MODEL_AGENT_SELECTION = originalEnv.MODEL_AGENT_SELECTION;
+            process.env.MODEL_AGENT_SELECTION =
+                originalEnv.MODEL_AGENT_SELECTION;
         } else {
             delete process.env.MODEL_AGENT_SELECTION;
         }
@@ -60,8 +61,8 @@ describe('ModelRouter', () => {
                 defaultModel: 'gpt-4o',
                 models: {
                     agent_selection: 'gpt-4o-mini',
-                    reflection: 'gpt-3.5-turbo'
-                }
+                    reflection: 'gpt-3.5-turbo',
+                },
             });
 
             expect(router.getModel('agent_selection')).toBe('gpt-4o-mini');
@@ -100,8 +101,8 @@ describe('ModelRouter', () => {
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o',
                 models: {
-                    agent_selection: 'gpt-4o-mini'
-                }
+                    agent_selection: 'gpt-4o-mini',
+                },
             });
 
             expect(router.getModel('agent_selection')).toBe('gpt-4o-mini');
@@ -111,8 +112,8 @@ describe('ModelRouter', () => {
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o',
                 models: {
-                    agent_selection: 'gpt-4o-mini'
-                }
+                    agent_selection: 'gpt-4o-mini',
+                },
             });
 
             expect(router.getModel('task_execution')).toBe('gpt-4o');
@@ -129,12 +130,12 @@ describe('ModelRouter', () => {
                 'reflection',
                 'summarization',
                 'translation',
-                'planning'
+                'planning',
             ];
 
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o-mini',
-                warnOnUnknown: false
+                warnOnUnknown: false,
             });
 
             for (const purpose of purposes) {
@@ -148,19 +149,21 @@ describe('ModelRouter', () => {
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o',
                 models: {
-                    agent_selection: 'gpt-4o-mini'
-                }
+                    agent_selection: 'gpt-4o-mini',
+                },
             });
 
-            expect(router.resolveModel('agent_selection', 'custom-model')).toBe('custom-model');
+            expect(router.resolveModel('agent_selection', 'custom-model')).toBe(
+                'custom-model',
+            );
         });
 
         test('should return purpose model when no override', () => {
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o',
                 models: {
-                    agent_selection: 'gpt-4o-mini'
-                }
+                    agent_selection: 'gpt-4o-mini',
+                },
             });
 
             expect(router.resolveModel('agent_selection')).toBe('gpt-4o-mini');
@@ -178,8 +181,8 @@ describe('ModelRouter', () => {
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o',
                 models: {
-                    agent_selection: 'gpt-4o-mini'
-                }
+                    agent_selection: 'gpt-4o-mini',
+                },
             });
 
             expect(router.hasModelFor('agent_selection')).toBe(true);
@@ -189,8 +192,8 @@ describe('ModelRouter', () => {
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o',
                 models: {
-                    agent_selection: 'gpt-4o-mini'
-                }
+                    agent_selection: 'gpt-4o-mini',
+                },
             });
 
             expect(router.hasModelFor('task_execution')).toBe(false);
@@ -203,8 +206,8 @@ describe('ModelRouter', () => {
                 defaultModel: 'gpt-4o',
                 models: {
                     agent_selection: 'gpt-4o-mini',
-                    reflection: 'gpt-3.5-turbo'
-                }
+                    reflection: 'gpt-3.5-turbo',
+                },
             });
 
             const configured = router.getConfiguredModels();
@@ -230,9 +233,9 @@ describe('ModelRouter', () => {
             const router = new ModelRouter({
                 defaultModel: '  gpt-4o  ',
                 models: {
-                    agent_selection: '  gpt-4o-mini  '
+                    agent_selection: '  gpt-4o-mini  ',
                 },
-                warnOnUnknown: false
+                warnOnUnknown: false,
             });
 
             expect(router.getDefaultModel()).toBe('gpt-4o');
@@ -244,9 +247,9 @@ describe('ModelRouter', () => {
                 defaultModel: 'gpt-4o',
                 models: {
                     agent_selection: '',
-                    reflection: '   '
+                    reflection: '   ',
                 },
-                warnOnUnknown: false
+                warnOnUnknown: false,
             });
 
             // Empty models should fall back to default
@@ -258,7 +261,7 @@ describe('ModelRouter', () => {
         test('should fall back to hardcoded default for empty defaultModel', () => {
             const router = new ModelRouter({
                 defaultModel: '',
-                warnOnUnknown: false
+                warnOnUnknown: false,
             });
 
             expect(router.getDefaultModel()).toBe('gpt-4o-mini');
@@ -271,8 +274,8 @@ describe('ModelRouter', () => {
                 models: {
                     agent_selection: 'gpt-4o-mini',
                     task_execution: 'gpt-3.5-turbo',
-                    reflection: 'claude-3-opus'
-                }
+                    reflection: 'claude-3-opus',
+                },
             });
 
             expect(router.getDefaultModel()).toBe('gpt-4o');
@@ -286,13 +289,15 @@ describe('ModelRouter', () => {
             const router = new ModelRouter({
                 defaultModel: 'my-custom-model',
                 models: {
-                    agent_selection: 'another-custom-model'
+                    agent_selection: 'another-custom-model',
                 },
-                warnOnUnknown: false
+                warnOnUnknown: false,
             });
 
             expect(router.getDefaultModel()).toBe('my-custom-model');
-            expect(router.getModel('agent_selection')).toBe('another-custom-model');
+            expect(router.getModel('agent_selection')).toBe(
+                'another-custom-model',
+            );
         });
 
         test('should validate against allowlist when provided', () => {
@@ -300,9 +305,9 @@ describe('ModelRouter', () => {
                 defaultModel: 'gpt-4o',
                 models: {
                     agent_selection: 'gpt-4o-mini',
-                    reflection: 'unknown-model'  // Not in allowlist
+                    reflection: 'unknown-model', // Not in allowlist
                 },
-                allowedModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo']
+                allowedModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
             });
 
             // All models should still be set (validation is warnings only)

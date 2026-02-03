@@ -7,13 +7,13 @@
 
 import { randomUUID } from 'node:crypto';
 import EventEmitter from 'node:events';
-import Logger from '@/utils/logger';
+import Logger from '@tinycrew/utils/logger';
 import type {
     AgentMessage,
     AgentMessageType,
     MessageHandler,
     MessageHandlerContext,
-} from '@/utils/types';
+} from '@tinycrew/utils/types';
 
 /**
  * Events emitted by the MessageBus

@@ -9,7 +9,7 @@ The Agent class supports streaming responses, allowing you to receive and displa
 The `chatStream()` method is the recommended way to stream responses with automatic history management:
 
 ```typescript
-import { Agent } from '@/Agent';
+import { Agent } from '@tinycrew/Agent';
 import OpenAI from 'openai';
 
 const agent = new Agent({
@@ -104,8 +104,8 @@ for await (const chunk of agent.performTaskStream(
 When an agent has tools, the stream handles tool calls automatically:
 
 ```typescript
-import { Agent } from '@/Agent';
-import { Tool } from '@/utils/types';
+import { Agent } from '@tinycrew/Agent';
+import { Tool } from '@tinycrew/utils/types';
 
 const weatherTool: Tool = {
     name: 'GetWeather',
@@ -152,7 +152,7 @@ for await (const chunk of agent.chatStream("What's the weather in Paris?")) {
 Streaming emits events for monitoring:
 
 ```typescript
-import { AgentEvent } from '@/utils/types';
+import { AgentEvent } from '@tinycrew/utils/types';
 
 // Emitted for each text chunk
 agent.on(AgentEvent.STREAM_CHUNK, (data) => {
@@ -185,7 +185,7 @@ agent.on(AgentEvent.TASK_COMPLETED, (data) => {
 Example of a simple streaming chat interface:
 
 ```typescript
-import { Agent } from '@/Agent';
+import { Agent } from '@tinycrew/Agent';
 import OpenAI from 'openai';
 import * as readline from 'readline';
 

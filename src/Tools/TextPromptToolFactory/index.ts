@@ -1,6 +1,6 @@
+import TextPromptTool from '@tinycrew/Tools/TextPromptTool';
+import Logger from '@tinycrew/utils/logger';
 import type OpenAI from 'openai';
-import TextPromptTool from '@/Tools/TextPromptTool';
-import Logger from '@/utils/logger.ts';
 
 /**
  * Factory class for creating common text processing tools

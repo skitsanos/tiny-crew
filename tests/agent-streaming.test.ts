@@ -3,8 +3,8 @@
  */
 
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { Agent } from '@/Agent';
-import { AgentEvent, type StreamChunk } from '@/utils/types';
+import { Agent } from '@tinycrew/Agent';
+import { AgentEvent, type StreamChunk } from '@tinycrew/utils/types';
 
 // Helper to create an async iterable from events
 function createMockStreamIterator(events: any[]): AsyncIterable<any> {
@@ -17,9 +17,9 @@ function createMockStreamIterator(events: any[]): AsyncIterable<any> {
                         return { value: events[index++], done: false };
                     }
                     return { value: undefined, done: true };
-                }
+                },
             };
-        }
+        },
     };
 }
 
@@ -35,9 +35,15 @@ describe('Agent Streaming', () => {
                         if (request.stream) {
                             // Return a mock async iterable for streaming
                             return createMockStreamIterator([
-                                { type: 'response.output_text.delta', delta: 'Hello' },
-                                { type: 'response.output_text.delta', delta: ' there!' },
-                                { type: 'response.done' }
+                                {
+                                    type: 'response.output_text.delta',
+                                    delta: 'Hello',
+                                },
+                                {
+                                    type: 'response.output_text.delta',
+                                    delta: ' there!',
+                                },
+                                { type: 'response.done' },
                             ]);
                         }
                         // Non-streaming response (for tool synthesis)
@@ -47,22 +53,27 @@ describe('Agent Streaming', () => {
                                 {
                                     type: 'message',
                                     role: 'assistant',
-                                    content: [{ type: 'output_text', text: 'Synthesized response' }]
-                                }
+                                    content: [
+                                        {
+                                            type: 'output_text',
+                                            text: 'Synthesized response',
+                                        },
+                                    ],
+                                },
                             ],
-                            output_text: 'Synthesized response'
+                            output_text: 'Synthesized response',
                         };
-                    })
-                }
+                    }),
+                },
             } as any;
 
             agent = new Agent(
                 {
                     name: 'StreamAgent',
                     goal: 'Test streaming',
-                    model: process.env.DEFAULT_MODEL || 'gpt-4o-mini'
+                    model: process.env.DEFAULT_MODEL || 'gpt-4o-mini',
                 },
-                mockStreamClient
+                mockStreamClient,
             );
         });
 
@@ -73,7 +84,7 @@ describe('Agent Streaming', () => {
                 chunks.push(chunk);
             }
 
-            const textChunks = chunks.filter(c => c.type === 'text');
+            const textChunks = chunks.filter((c) => c.type === 'text');
             expect(textChunks.length).toBe(2);
             expect(textChunks[0].content).toBe('Hello');
             expect(textChunks[1].content).toBe(' there!');
@@ -86,7 +97,7 @@ describe('Agent Streaming', () => {
                 chunks.push(chunk);
             }
 
-            const doneChunk = chunks.find(c => c.type === 'done');
+            const doneChunk = chunks.find((c) => c.type === 'done');
             expect(doneChunk).toBeDefined();
             expect(doneChunk?.isComplete).toBe(true);
         });
@@ -100,7 +111,11 @@ describe('Agent Streaming', () => {
             }
 
             const history = agent.getHistory();
-            expect(history.some(m => m.role === 'user' && m.content === 'Test message')).toBe(true);
+            expect(
+                history.some(
+                    (m) => m.role === 'user' && m.content === 'Test message',
+                ),
+            ).toBe(true);
         });
 
         it('adds assistant response to history after streaming completes', async () => {
@@ -109,7 +124,7 @@ describe('Agent Streaming', () => {
             }
 
             const history = agent.getHistory();
-            expect(history.some(m => m.role === 'assistant')).toBe(true);
+            expect(history.some((m) => m.role === 'assistant')).toBe(true);
         });
 
         it('calls onChunk callback for each chunk', async () => {
@@ -122,7 +137,7 @@ describe('Agent Streaming', () => {
             }
 
             expect(receivedChunks.length).toBeGreaterThan(0);
-            expect(receivedChunks.some(c => c.type === 'text')).toBe(true);
+            expect(receivedChunks.some((c) => c.type === 'text')).toBe(true);
         });
 
         it('returns full response text', async () => {
@@ -146,26 +161,32 @@ describe('Agent Streaming', () => {
                     create: mock(async (request: any) => {
                         if (request.stream) {
                             return createMockStreamIterator([
-                                { type: 'response.output_text.delta', delta: 'Streaming' },
-                                { type: 'response.output_text.delta', delta: ' response' },
-                                { type: 'response.done' }
+                                {
+                                    type: 'response.output_text.delta',
+                                    delta: 'Streaming',
+                                },
+                                {
+                                    type: 'response.output_text.delta',
+                                    delta: ' response',
+                                },
+                                { type: 'response.done' },
                             ]);
                         }
                         return {
                             id: 'resp_123',
                             output: [],
-                            output_text: 'Non-streaming'
+                            output_text: 'Non-streaming',
                         };
-                    })
-                }
+                    }),
+                },
             } as any;
 
             agent = new Agent(
                 {
                     name: 'TaskStreamAgent',
-                    goal: 'Test task streaming'
+                    goal: 'Test task streaming',
                 },
-                mockStreamClient
+                mockStreamClient,
             );
         });
 
@@ -242,18 +263,18 @@ describe('Agent Streaming', () => {
                                     item: {
                                         type: 'function_call',
                                         call_id: 'call_123',
-                                        name: 'TestTool'
-                                    }
+                                        name: 'TestTool',
+                                    },
                                 },
                                 {
                                     type: 'response.function_call_arguments.delta',
                                     call_id: 'call_123',
-                                    delta: '{"input":'
+                                    delta: '{"input":',
                                 },
                                 {
                                     type: 'response.function_call_arguments.delta',
                                     call_id: 'call_123',
-                                    delta: '"test"}'
+                                    delta: '"test"}',
                                 },
                                 {
                                     type: 'response.output_item.done',
@@ -261,10 +282,10 @@ describe('Agent Streaming', () => {
                                         type: 'function_call',
                                         call_id: 'call_123',
                                         name: 'TestTool',
-                                        arguments: '{"input":"test"}'
-                                    }
+                                        arguments: '{"input":"test"}',
+                                    },
                                 },
-                                { type: 'response.done' }
+                                { type: 'response.done' },
                             ]);
                         }
                         // Synthesis response after tool execution
@@ -274,19 +295,24 @@ describe('Agent Streaming', () => {
                                 {
                                     type: 'message',
                                     role: 'assistant',
-                                    content: [{ type: 'output_text', text: 'Tool executed successfully' }]
-                                }
+                                    content: [
+                                        {
+                                            type: 'output_text',
+                                            text: 'Tool executed successfully',
+                                        },
+                                    ],
+                                },
                             ],
-                            output_text: 'Tool executed successfully'
+                            output_text: 'Tool executed successfully',
                         };
-                    })
-                }
+                    }),
+                },
             } as any;
 
             const toolAgent = new Agent(
                 {
                     name: 'ToolStreamAgent',
-                    goal: 'Test tools with streaming'
+                    goal: 'Test tools with streaming',
                 },
                 mockToolStreamClient,
                 [
@@ -299,14 +325,17 @@ describe('Agent Streaming', () => {
                             parameters: {
                                 type: 'object',
                                 properties: {
-                                    input: { type: 'string', description: 'Input value' }
+                                    input: {
+                                        type: 'string',
+                                        description: 'Input value',
+                                    },
                                 },
-                                required: ['input']
-                            }
+                                required: ['input'],
+                            },
                         },
-                        use: async (args: any) => `Processed: ${args.input}`
-                    }
-                ]
+                        use: async (args: any) => `Processed: ${args.input}`,
+                    },
+                ],
             );
 
             const chunks: StreamChunk[] = [];
@@ -316,11 +345,11 @@ describe('Agent Streaming', () => {
             }
 
             // Should have tool_call_start and tool_call_end chunks
-            expect(chunks.some(c => c.type === 'tool_call_start')).toBe(true);
-            expect(chunks.some(c => c.type === 'tool_call_end')).toBe(true);
+            expect(chunks.some((c) => c.type === 'tool_call_start')).toBe(true);
+            expect(chunks.some((c) => c.type === 'tool_call_end')).toBe(true);
 
             // The tool_call_end should contain the result
-            const toolEndChunk = chunks.find(c => c.type === 'tool_call_end');
+            const toolEndChunk = chunks.find((c) => c.type === 'tool_call_end');
             expect(toolEndChunk?.content).toContain('Processed: test');
         });
 
@@ -336,18 +365,18 @@ describe('Agent Streaming', () => {
                                         type: 'function_call',
                                         call_id: 'call_abc',
                                         name: 'SimpleTool',
-                                        arguments: '{}'
-                                    }
+                                        arguments: '{}',
+                                    },
                                 },
-                                { type: 'response.done' }
+                                { type: 'response.done' },
                             ]);
                         }
                         return {
                             id: 'resp_789',
-                            output_text: 'Done'
+                            output_text: 'Done',
                         };
-                    })
-                }
+                    }),
+                },
             } as any;
 
             const toolAgent = new Agent(
@@ -360,11 +389,15 @@ describe('Agent Streaming', () => {
                         schema: {
                             name: 'SimpleTool',
                             description: 'Simple',
-                            parameters: { type: 'object', properties: {}, required: [] }
+                            parameters: {
+                                type: 'object',
+                                properties: {},
+                                required: [],
+                            },
                         },
-                        use: async () => 'result'
-                    }
-                ]
+                        use: async () => 'result',
+                    },
+                ],
             );
 
             let toolUsedEvent: any = null;
@@ -387,13 +420,13 @@ describe('Agent Streaming', () => {
                 responses: {
                     create: mock(async () => {
                         throw new Error('Stream failed');
-                    })
-                }
+                    }),
+                },
             } as any;
 
             const errorAgent = new Agent(
                 { name: 'ErrorAgent', goal: 'Test errors' },
-                errorClient
+                errorClient,
             );
 
             let failedEvent: any = null;
@@ -405,7 +438,7 @@ describe('Agent Streaming', () => {
                 for await (const _ of errorAgent.chatStream('Hello')) {
                     // Should not reach here
                 }
-            } catch (e) {
+            } catch (_e) {
                 // Expected
             }
 
@@ -418,13 +451,13 @@ describe('Agent Streaming', () => {
                 responses: {
                     create: mock(async () => {
                         throw new Error('API error');
-                    })
-                }
+                    }),
+                },
             } as any;
 
             const errorAgent = new Agent(
                 { name: 'ThrowAgent', goal: 'Test throws' },
-                errorClient
+                errorClient,
             );
 
             let caughtError: Error | null = null;
@@ -452,23 +485,29 @@ describe('Agent Streaming', () => {
                         capturedRequest = request;
                         if (request.stream) {
                             return createMockStreamIterator([
-                                { type: 'response.output_text.delta', delta: 'With context' },
-                                { type: 'response.done' }
+                                {
+                                    type: 'response.output_text.delta',
+                                    delta: 'With context',
+                                },
+                                { type: 'response.done' },
                             ]);
                         }
                         return { output_text: '' };
-                    })
-                }
+                    }),
+                },
             } as any;
 
             const contextAgent = new Agent(
                 { name: 'ContextAgent', goal: 'Test context' },
-                contextClient
+                contextClient,
             );
 
             const memoryContext = 'Important memory: User likes TypeScript';
 
-            for await (const _ of contextAgent.performTaskStream('Hello', memoryContext)) {
+            for await (const _ of contextAgent.performTaskStream(
+                'Hello',
+                memoryContext,
+            )) {
                 // Consume
             }
 
@@ -476,7 +515,9 @@ describe('Agent Streaming', () => {
             // Check that the context was included in the conversation
             const inputMessages = capturedRequest.input;
             const hasContext = inputMessages.some((m: any) =>
-                m.content?.some?.((c: any) => c.text?.includes('Important memory'))
+                m.content?.some?.((c: any) =>
+                    c.text?.includes('Important memory'),
+                ),
             );
             expect(hasContext).toBe(true);
         });
@@ -490,33 +531,40 @@ describe('Agent Streaming', () => {
                         capturedRequest = request;
                         if (request.stream) {
                             return createMockStreamIterator([
-                                { type: 'response.output_text.delta', delta: 'Response' },
-                                { type: 'response.done' }
+                                {
+                                    type: 'response.output_text.delta',
+                                    delta: 'Response',
+                                },
+                                { type: 'response.done' },
                             ]);
                         }
                         return { output_text: '' };
-                    })
-                }
+                    }),
+                },
             } as any;
 
             const historyAgent = new Agent(
                 { name: 'HistoryAgent', goal: 'Test history' },
-                historyClient
+                historyClient,
             );
 
             const chatHistory = [
                 { role: 'user' as const, content: 'Previous question' },
-                { role: 'assistant' as const, content: 'Previous answer' }
+                { role: 'assistant' as const, content: 'Previous answer' },
             ];
 
-            for await (const _ of historyAgent.performTaskStream('New question', '', chatHistory)) {
+            for await (const _ of historyAgent.performTaskStream(
+                'New question',
+                '',
+                chatHistory,
+            )) {
                 // Consume
             }
 
             expect(capturedRequest).not.toBeNull();
             const inputMessages = capturedRequest.input;
             const hasPreviousQuestion = inputMessages.some((m: any) =>
-                m.content?.some?.((c: any) => c.text === 'Previous question')
+                m.content?.some?.((c: any) => c.text === 'Previous question'),
             );
             expect(hasPreviousQuestion).toBe(true);
         });

@@ -5,10 +5,10 @@
  * More examples can bed found in the examples folder.
  */
 
+import Logger from '@tinycrew/utils/logger';
+import { CrewEvent } from '@tinycrew/utils/types';
 import dedent from 'dedent';
 import OpenAI from 'openai';
-import Logger from '@/utils/logger.ts';
-import { CrewEvent } from '@/utils/types.ts';
 import { Agent } from './Agent';
 import { Crew } from './Crew';
 import { FileWriteTool } from './Tools/FileWriteTool';

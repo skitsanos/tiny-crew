@@ -5,7 +5,7 @@
  * and more capable models for complex reasoning.
  */
 
-import type { ModelPurpose, ModelRouterConfig } from '@/utils/types';
+import type { ModelPurpose, ModelRouterConfig } from '@tinycrew/utils/types';
 
 /**
  * Environment variable names for each model purpose
