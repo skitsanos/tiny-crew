@@ -16,7 +16,7 @@
         "dayjs": "^1.11.19",
         "dedent": "^1.7.1",
         "cheerio": "^1.2.0",
-        "jsdom": "^28.0.0"
+        "jsdom": "^28.0.0 || ^29.0.0"
     },
     "peerDependenciesMeta": {
         "cheerio": {
