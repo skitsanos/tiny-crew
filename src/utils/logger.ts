@@ -5,6 +5,7 @@
 
 import { hostname } from 'node:os';
 import dayjs from 'dayjs';
+import { colorizeText } from './logColors';
 
 export enum LogLevel {
     TRACE = 0,
@@ -122,119 +123,7 @@ export class Logger {
     }
 
     private getColoredText(text: string, color?: string): string {
-        if (!this.colorize || !color) {
-            return text;
-        }
-
-        const ansiSequence = this.resolveAnsiColor(color);
-        if (!ansiSequence) {
-            return text;
-        }
-
-        return `${ansiSequence}${text}\x1b[0m`;
-    }
-
-    private resolveAnsiColor(color: string): string | undefined {
-        const trimmed = color.trim().toLowerCase();
-
-        const rgb = this.colorToRgb(trimmed);
-        if (!rgb) {
-            return undefined;
-        }
-
-        const contrasted = this.ensureContrast(rgb);
-        return this.rgbToAnsi(contrasted);
-    }
-
-    private colorToRgb(
-        color: string,
-    ): { r: number; g: number; b: number } | undefined {
-        if (color.startsWith('#')) {
-            return this.hexToRgb(color);
-        }
-
-        const namedColors: Record<string, [number, number, number]> = {
-            red: [239, 68, 68],
-            green: [34, 197, 94],
-            blue: [59, 130, 246],
-            orange: [245, 158, 11],
-            yellow: [250, 204, 21],
-            magenta: [217, 70, 239],
-            cyan: [34, 211, 238],
-            white: [255, 255, 255],
-            darkred: [185, 28, 28],
-            gray: [156, 163, 175],
-            grey: [156, 163, 175],
-        };
-
-        const tuple = namedColors[color];
-        if (tuple) {
-            const [r, g, b] = tuple;
-            return { r, g, b };
-        }
-
-        return undefined;
-    }
-
-    private hexToRgb(
-        hexColor: string,
-    ): { r: number; g: number; b: number } | undefined {
-        const hex = hexColor.replace('#', '');
-
-        if (!(hex.length === 3 || hex.length === 6)) {
-            return undefined;
-        }
-
-        const normalized =
-            hex.length === 3
-                ? [...hex].map((char) => `${char}${char}`).join('')
-                : hex;
-
-        const r = parseInt(normalized.slice(0, 2), 16);
-        const g = parseInt(normalized.slice(2, 4), 16);
-        const b = parseInt(normalized.slice(4, 6), 16);
-
-        if ([r, g, b].some((value) => Number.isNaN(value))) {
-            return undefined;
-        }
-
-        return { r, g, b };
-    }
-
-    private ensureContrast({ r, g, b }: { r: number; g: number; b: number }): {
-        r: number;
-        g: number;
-        b: number;
-    } {
-        const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-        const target = 165;
-
-        if (brightness >= target) {
-            return { r, g, b };
-        }
-
-        const factor = target / Math.max(brightness, 1);
-
-        const adjust = (value: number) =>
-            Math.min(255, Math.round(value * factor));
-
-        return {
-            r: adjust(r),
-            g: adjust(g),
-            b: adjust(b),
-        };
-    }
-
-    private rgbToAnsi({
-        r,
-        g,
-        b,
-    }: {
-        r: number;
-        g: number;
-        b: number;
-    }): string {
-        return `\x1b[38;2;${r};${g};${b}m`;
+        return colorizeText(text, color, this.colorize);
     }
 
     private shouldLog(level: LogLevel): boolean {
@@ -303,36 +192,7 @@ export class Logger {
             ...this.additionalFields,
         };
 
-        // Process additional arguments
-        if (args.length > 0) {
-            args.forEach((arg, index) => {
-                if (typeof arg === 'object' && arg !== null) {
-                    Object.entries(arg).forEach(([key, value]) => {
-                        if (key === 'timestamp') {
-                            const formatted =
-                                typeof value === 'number'
-                                    ? dayjs(value).format('YYYY-MM-DD HH:mm:ss')
-                                    : String(value);
-                            logContent.eventTimestamp = formatted;
-                            return;
-                        }
-
-                        if (
-                            ['level', 'host', 'context', 'message'].includes(
-                                key,
-                            )
-                        ) {
-                            logContent[`event_${key}`] = value;
-                            return;
-                        }
-
-                        logContent[key] = value;
-                    });
-                } else {
-                    logContent[`arg${index}`] = arg;
-                }
-            });
-        }
+        this.mergeArgs(logContent, args);
 
         const structuredLog = this.prepareStructuredLog(logContent);
 
@@ -357,6 +217,44 @@ export class Logger {
     ): Promise<void> {
         const bunStream = stream === 'stderr' ? Bun.stderr : Bun.stdout;
         await Bun.write(bunStream, text);
+    }
+
+    /** Field names reserved by the base log content; collisions are namespaced */
+    private static readonly RESERVED_FIELDS = [
+        'level',
+        'host',
+        'context',
+        'message',
+    ];
+
+    /** Fold extra log arguments into the structured log content */
+    private mergeArgs(logContent: LogContent, args: any[]): void {
+        args.forEach((arg, index) => {
+            if (typeof arg === 'object' && arg !== null) {
+                this.mergeObjectArg(logContent, arg);
+            } else {
+                logContent[`arg${index}`] = arg;
+            }
+        });
+    }
+
+    /** Merge a single object argument, namespacing reserved keys */
+    private mergeObjectArg(
+        logContent: LogContent,
+        arg: Record<string, unknown>,
+    ): void {
+        for (const [key, value] of Object.entries(arg)) {
+            if (key === 'timestamp') {
+                logContent.eventTimestamp =
+                    typeof value === 'number'
+                        ? dayjs(value).format('YYYY-MM-DD HH:mm:ss')
+                        : String(value);
+            } else if (Logger.RESERVED_FIELDS.includes(key)) {
+                logContent[`event_${key}`] = value;
+            } else {
+                logContent[key] = value;
+            }
+        }
     }
 
     private prepareStructuredLog(logContent: LogContent): Record<string, any> {
