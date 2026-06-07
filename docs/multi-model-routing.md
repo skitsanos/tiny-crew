@@ -121,25 +121,23 @@ When no environment variables are set and no explicit configuration is provided,
 
 ## Model Name Validation
 
-ModelRouter validates model names and warns about potential typos:
+ModelRouter accepts any non-empty model name as-is — the OpenAI API is the
+source of truth for whether a model exists and reports unknown models clearly.
+Empty/whitespace names are ignored and fall back to the default.
 
-```typescript
-// Warns: model doesn't match known patterns
-const router = new ModelRouter({
-    defaultModel: 'gpt-4o-min'  // Typo! Should be 'gpt-4o-mini'
-});
-// Console: [ModelRouter] Model "gpt-4o-min" for defaultModel doesn't match known patterns - verify spelling
-```
+### Restricting models with an allowlist
 
-### Suppressing Warnings
-
-For custom or self-hosted models:
+To guard against accidental use of unexpected (e.g. expensive) models, pass an
+`allowedModels` list. Models outside the list are still used but trigger a
+warning:
 
 ```typescript
 const router = new ModelRouter({
-    defaultModel: 'my-custom-model',
-    warnOnUnknown: false  // Suppress pattern-matching warnings
+    defaultModel: 'gpt-5-mini',
+    allowedModels: ['gpt-5-mini', 'gpt-5-nano'],
 });
+// Console (if a model outside the list is configured):
+// [ModelRouter] Model "gpt-5" for <purpose> is not in allowed list
 ```
 
 ### Using an Allowlist
@@ -229,9 +227,6 @@ interface ModelRouterConfig {
 
     // Allowlist of valid model names (warns when model not in list)
     allowedModels?: string[];
-
-    // Warn when model doesn't match known patterns (default: true)
-    warnOnUnknown?: boolean;
 }
 ```
 

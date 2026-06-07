@@ -24,27 +24,12 @@ const ENV_VAR_MAP: Record<ModelPurpose, string> = {
 
 const DEFAULT_MODEL_FALLBACK = 'gpt-4o-mini';
 
-/**
- * Common model patterns for validation warnings
- */
-const KNOWN_MODEL_PATTERNS = [
-    /^gpt-\d/, // gpt-3.5, gpt-4, gpt-4o, gpt-5.x, ...
-    /^o\d/, // o1, o3, o4, ... reasoning models
-    /^claude/,
-    /^gemini/,
-    /^llama/,
-    /^mistral/,
-    /^codellama/,
-];
-
 export class ModelRouter {
     private readonly defaultModel: string;
     private readonly purposeModels: Map<ModelPurpose, string>;
     private readonly allowedModels?: Set<string>;
-    private readonly warnOnUnknown: boolean;
 
     constructor(config?: ModelRouterConfig) {
-        this.warnOnUnknown = config?.warnOnUnknown ?? true;
         this.allowedModels = config?.allowedModels
             ? new Set(config.allowedModels)
             : undefined;
@@ -86,22 +71,13 @@ export class ModelRouter {
             return null;
         }
 
-        // Check against allowlist if provided
+        // Validate against the allowlist if one was provided. Otherwise we
+        // accept any non-empty name: the OpenAI API is the source of truth for
+        // whether a model exists and reports unknown models clearly.
         if (this.allowedModels && !this.allowedModels.has(trimmed)) {
             console.warn(
                 `[ModelRouter] Model "${trimmed}" for ${source} is not in allowed list`,
             );
-        }
-        // If no allowlist, warn on unknown patterns
-        else if (this.warnOnUnknown && !this.allowedModels) {
-            const isKnown = KNOWN_MODEL_PATTERNS.some((pattern) =>
-                pattern.test(trimmed),
-            );
-            if (!isKnown) {
-                console.warn(
-                    `[ModelRouter] Model "${trimmed}" for ${source} doesn't match known patterns - verify spelling`,
-                );
-            }
         }
 
         return trimmed;

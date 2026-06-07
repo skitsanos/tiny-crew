@@ -198,8 +198,6 @@ export interface ModelRouterConfig {
     models?: Partial<Record<ModelPurpose, string>>;
     /** Allowlist of valid model names (if set, warns when model not in list) */
     allowedModels?: string[];
-    /** Warn when model doesn't match known patterns (default: true) */
-    warnOnUnknown?: boolean;
 }
 
 // Events

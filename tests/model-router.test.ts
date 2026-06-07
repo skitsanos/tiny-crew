@@ -135,7 +135,6 @@ describe('ModelRouter', () => {
 
             const router = new ModelRouter({
                 defaultModel: 'gpt-4o-mini',
-                warnOnUnknown: false,
             });
 
             for (const purpose of purposes) {
@@ -235,7 +234,6 @@ describe('ModelRouter', () => {
                 models: {
                     agent_selection: '  gpt-4o-mini  ',
                 },
-                warnOnUnknown: false,
             });
 
             expect(router.getDefaultModel()).toBe('gpt-4o');
@@ -249,7 +247,6 @@ describe('ModelRouter', () => {
                     agent_selection: '',
                     reflection: '   ',
                 },
-                warnOnUnknown: false,
             });
 
             // Empty models should fall back to default
@@ -261,37 +258,18 @@ describe('ModelRouter', () => {
         test('should fall back to hardcoded default for empty defaultModel', () => {
             const router = new ModelRouter({
                 defaultModel: '',
-                warnOnUnknown: false,
             });
 
             expect(router.getDefaultModel()).toBe('gpt-4o-mini');
         });
 
-        test('should accept known model patterns without warning', () => {
-            // These should not trigger warnings
-            const router = new ModelRouter({
-                defaultModel: 'gpt-4o',
-                models: {
-                    agent_selection: 'gpt-4o-mini',
-                    task_execution: 'gpt-3.5-turbo',
-                    reflection: 'claude-3-opus',
-                },
-            });
-
-            expect(router.getDefaultModel()).toBe('gpt-4o');
-            expect(router.getModel('agent_selection')).toBe('gpt-4o-mini');
-            expect(router.getModel('task_execution')).toBe('gpt-3.5-turbo');
-            expect(router.getModel('reflection')).toBe('claude-3-opus');
-        });
-
-        test('should disable warnings with warnOnUnknown: false', () => {
-            // Should not trigger warnings even for unknown patterns
+        test('should accept any non-empty model name', () => {
+            // Without an allowlist, arbitrary names are accepted as-is
             const router = new ModelRouter({
                 defaultModel: 'my-custom-model',
                 models: {
                     agent_selection: 'another-custom-model',
                 },
-                warnOnUnknown: false,
             });
 
             expect(router.getDefaultModel()).toBe('my-custom-model');
