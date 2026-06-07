@@ -32,6 +32,7 @@ import type {
 } from 'openai/resources/responses/responses';
 import { summarizeConversation } from './conversation';
 import type { MessageBus, SendMessageOptions } from './MessageBus';
+import { AgentMessaging } from './messaging';
 import { accumulateStreamToolCalls, createStreamState } from './streaming';
 import {
     buildToolDefinitions,
@@ -74,10 +75,8 @@ export class Agent extends EventEmitter {
     private readonly summarizationModel?: string;
     /** Stored conversation summary (from previous summarizations) */
     private conversationSummary: string = '';
-    /** Message bus for agent-to-agent communication */
-    private messageBus: MessageBus | null = null;
-    /** Message handlers registered by this agent */
-    private readonly messageHandlers: MessageHandler[] = [];
+    /** Agent-to-agent messaging (bus connection + inbound handlers) */
+    private readonly messaging: AgentMessaging;
 
     /**
      * Create a new Agent instance
@@ -103,6 +102,9 @@ export class Agent extends EventEmitter {
         this.tools = new Map(tools.map((tool) => [tool.name, tool]));
         this.taskHistory = new Map();
         this.logger = new Logger(`Agent-${this.name}`);
+        this.messaging = new AgentMessaging(this.name, this.logger, (e, p) =>
+            this.emit(e, p),
+        );
 
         // Initialize conversation history management
         this.maxHistoryMessages = config.maxHistoryMessages ?? 50;
@@ -826,46 +828,21 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * ```
      */
     connectToMessageBus(bus: MessageBus): void {
-        if (this.messageBus) {
-            this.disconnectFromMessageBus();
-        }
-
-        this.messageBus = bus;
-
-        // Register with the bus using our combined handler
-        bus.registerAgent(this.name, async (ctx) => {
-            this.emit(AgentEvent.MESSAGE_RECEIVED, {
-                agent: this.name,
-                from: ctx.message.from,
-                message: ctx.message,
-                timestamp: Date.now(),
-            });
-
-            // Call all registered handlers
-            for (const handler of this.messageHandlers) {
-                await handler(ctx);
-            }
-        });
-
-        this.logger.info(`Connected to message bus`);
+        this.messaging.connect(bus);
     }
 
     /**
      * Disconnect this agent from the message bus
      */
     disconnectFromMessageBus(): void {
-        if (this.messageBus) {
-            this.messageBus.unregisterAgent(this.name);
-            this.messageBus = null;
-            this.logger.info(`Disconnected from message bus`);
-        }
+        this.messaging.disconnect();
     }
 
     /**
      * Check if this agent is connected to a message bus
      */
     isConnectedToMessageBus(): boolean {
-        return this.messageBus !== null;
+        return this.messaging.isConnected();
     }
 
     /**
@@ -898,20 +875,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         content: string,
         options: SendMessageOptions = {},
     ): AgentMessage {
-        if (!this.messageBus) {
-            throw new Error('Agent is not connected to a message bus');
-        }
-
-        const message = this.messageBus.send(this.name, to, content, options);
-
-        this.emit(AgentEvent.MESSAGE_SENT, {
-            agent: this.name,
-            to,
-            message,
-            timestamp: Date.now(),
-        });
-
-        return message;
+        return this.messaging.send(to, content, options);
     }
 
     /**
@@ -936,17 +900,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         options: SendMessageOptions = {},
         timeoutMs: number = 30000,
     ): Promise<AgentMessage> {
-        if (!this.messageBus) {
-            throw new Error('Agent is not connected to a message bus');
-        }
-
-        return this.messageBus.sendAndWait(
-            this.name,
-            to,
-            content,
-            options,
-            timeoutMs,
-        );
+        return this.messaging.sendAndWait(to, content, options, timeoutMs);
     }
 
     /**
@@ -960,11 +914,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         content: string,
         options: Omit<SendMessageOptions, 'type'> = {},
     ): AgentMessage {
-        if (!this.messageBus) {
-            throw new Error('Agent is not connected to a message bus');
-        }
-
-        return this.messageBus.broadcast(this.name, content, options);
+        return this.messaging.broadcast(content, options);
     }
 
     /**
@@ -990,22 +940,14 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * ```
      */
     onMessage(handler: MessageHandler): () => void {
-        this.messageHandlers.push(handler);
-
-        // Return unsubscribe function
-        return () => {
-            const index = this.messageHandlers.indexOf(handler);
-            if (index !== -1) {
-                this.messageHandlers.splice(index, 1);
-            }
-        };
+        return this.messaging.onMessage(handler);
     }
 
     /**
      * Get the number of registered message handlers
      */
     getMessageHandlerCount(): number {
-        return this.messageHandlers.length;
+        return this.messaging.handlerCount();
     }
 
     /**
