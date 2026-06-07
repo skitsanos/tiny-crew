@@ -5,7 +5,11 @@
 
 import EventEmitter from 'node:events';
 import type Logger from '@tinycrew/utils/logger';
+import { AccessCountTracker } from './accessCounts';
 import { InMemoryBackend } from './backends/InMemoryBackend';
+import { buildContextString } from './context';
+import { planEviction } from './eviction';
+import { computeStats, type MemoryStats } from './stats';
 import type {
     MemoryBackend,
     MemoryEventPayload,
@@ -14,7 +18,7 @@ import type {
     MemorySetOptions,
     MemoryStoreConfig,
 } from './types';
-import { createMemoryItem, estimateTokens, MemoryEvent } from './types';
+import { createMemoryItem, MemoryEvent } from './types';
 
 const DEFAULT_CONFIG: Required<MemoryStoreConfig> = {
     defaultTtl: 0, // 0 = never expires
@@ -34,11 +38,8 @@ export class MemoryStore extends EventEmitter {
     /** Track active crew IDs for periodic eviction */
     private readonly activeCrews: Set<string> = new Set();
 
-    /** Track dirty access counts (crewId -> key -> {accessCount, lastAccessedAt}) */
-    private readonly dirtyAccessCounts: Map<
-        string,
-        Map<string, { accessCount: number; lastAccessedAt: number }>
-    > = new Map();
+    /** Pending access counts, flushed to the backend periodically */
+    private readonly accessCounts = new AccessCountTracker();
 
     constructor(
         backend?: MemoryBackend,
@@ -148,7 +149,7 @@ export class MemoryStore extends EventEmitter {
         };
 
         // Apply any pending dirty access count first
-        const dirtyCount = this.getDirtyAccessCount(crewId, key);
+        const dirtyCount = this.accessCounts.get(crewId, key);
         if (dirtyCount) {
             item.accessCount = dirtyCount.accessCount;
             item.lastAccessedAt = dirtyCount.lastAccessedAt;
@@ -157,7 +158,7 @@ export class MemoryStore extends EventEmitter {
         // Update access tracking in-memory only (defer persistence)
         item.accessCount++;
         item.lastAccessedAt = Date.now();
-        this.markAccessCountDirty(
+        this.accessCounts.mark(
             crewId,
             key,
             item.accessCount,
@@ -170,39 +171,12 @@ export class MemoryStore extends EventEmitter {
     }
 
     /**
-     * Get dirty access count for an item
-     */
-    private getDirtyAccessCount(
-        crewId: string,
-        key: string,
-    ): { accessCount: number; lastAccessedAt: number } | null {
-        return this.dirtyAccessCounts.get(crewId)?.get(key) ?? null;
-    }
-
-    /**
-     * Mark access count as dirty (needs persistence)
-     */
-    private markAccessCountDirty(
-        crewId: string,
-        key: string,
-        accessCount: number,
-        lastAccessedAt: number,
-    ): void {
-        if (!this.dirtyAccessCounts.has(crewId)) {
-            this.dirtyAccessCounts.set(crewId, new Map());
-        }
-        this.dirtyAccessCounts
-            .get(crewId)!
-            .set(key, { accessCount, lastAccessedAt });
-    }
-
-    /**
      * Flush dirty access counts to backend
      */
     async flushAccessCounts(): Promise<number> {
         let flushedCount = 0;
 
-        for (const [crewId, dirtyItems] of this.dirtyAccessCounts) {
+        for (const [crewId, dirtyItems] of this.accessCounts.entries()) {
             if (dirtyItems.size === 0) continue;
 
             const memory = await this.backend.load(crewId);
@@ -289,7 +263,7 @@ export class MemoryStore extends EventEmitter {
     async clear(crewId: string): Promise<void> {
         await this.backend.clear(crewId);
         // Clear any dirty access counts for this crew
-        this.dirtyAccessCounts.delete(crewId);
+        this.accessCounts.clearCrew(crewId);
         this.activeCrews.delete(crewId);
         this.logger?.info(`Memory cleared for crew: ${crewId}`);
         this.emitEvent(MemoryEvent.MEMORY_CLEARED, { crewId });
@@ -298,40 +272,9 @@ export class MemoryStore extends EventEmitter {
     /**
      * Get memory statistics for a crew
      */
-    async getStats(crewId: string): Promise<{
-        itemCount: number;
-        totalTokens: number;
-        oldestItem: number | null;
-        newestItem: number | null;
-        agentCounts: Record<string, number>;
-    }> {
+    async getStats(crewId: string): Promise<MemoryStats> {
         const memory = await this.backend.load(crewId);
-
-        let totalTokens = 0;
-        let oldestItem: number | null = null;
-        let newestItem: number | null = null;
-        const agentCounts: Record<string, number> = {};
-
-        for (const item of memory.values()) {
-            totalTokens += item.tokenCount;
-
-            if (oldestItem === null || item.createdAt < oldestItem) {
-                oldestItem = item.createdAt;
-            }
-            if (newestItem === null || item.createdAt > newestItem) {
-                newestItem = item.createdAt;
-            }
-
-            agentCounts[item.agent] = (agentCounts[item.agent] ?? 0) + 1;
-        }
-
-        return {
-            itemCount: memory.size,
-            totalTokens,
-            oldestItem,
-            newestItem,
-            agentCounts,
-        };
+        return computeStats(memory);
     }
 
     /**
@@ -355,9 +298,7 @@ export class MemoryStore extends EventEmitter {
             relevanceKeywords?: string[];
         },
     ): Promise<string> {
-        const maxTokens = options?.maxTokens ?? 4000;
         const maxItems = options?.maxItems ?? 20;
-        const includeTimestamps = options?.includeTimestamps ?? true;
 
         // Query relevant items (pass relevanceKeywords for scoring)
         const items = await this.query(crewId, {
@@ -367,51 +308,11 @@ export class MemoryStore extends EventEmitter {
             relevanceKeywords: options?.relevanceKeywords,
         });
 
-        if (items.length === 0) {
-            return '';
-        }
-
-        // Build context string within token budget
-        const lines: string[] = ['## Previous Task Results\n'];
-        let tokenCount = estimateTokens(lines[0]);
-
-        for (const item of items) {
-            // Use summary if available and result is large
-            const content =
-                item.summary && item.tokenCount > this.config.summarizeThreshold
-                    ? item.summary
-                    : item.result;
-
-            // Format the entry
-            let entry = `### ${item.agent}: ${item.task.slice(0, 100)}${item.task.length > 100 ? '...' : ''}\n`;
-            if (includeTimestamps) {
-                entry += `*${new Date(item.createdAt).toISOString()}*\n`;
-            }
-            entry += `${content}\n\n`;
-
-            const entryTokens = estimateTokens(entry);
-
-            // Check if we'd exceed budget
-            if (tokenCount + entryTokens > maxTokens) {
-                // Try truncating the content
-                const availableTokens = maxTokens - tokenCount - 100; // buffer
-                if (availableTokens > 200) {
-                    const truncatedContent = `${content.slice(0, availableTokens * 4)}...`;
-                    entry = `### ${item.agent}: ${item.task.slice(0, 100)}${item.task.length > 100 ? '...' : ''}\n`;
-                    if (includeTimestamps) {
-                        entry += `*${new Date(item.createdAt).toISOString()}*\n`;
-                    }
-                    entry += `${truncatedContent}\n\n`;
-                    lines.push(entry);
-                }
-                break;
-            }
-
-            lines.push(entry);
-            tokenCount += entryTokens;
-        }
-
-        return lines.join('');
+        return buildContextString(items, {
+            maxTokens: options?.maxTokens ?? 4000,
+            includeTimestamps: options?.includeTimestamps ?? true,
+            summarizeThreshold: this.config.summarizeThreshold,
+        });
     }
 
     /**
@@ -419,73 +320,25 @@ export class MemoryStore extends EventEmitter {
      */
     async evict(crewId: string): Promise<number> {
         const memory = await this.backend.load(crewId);
-        const now = Date.now();
-        const toDelete: string[] = [];
+        const toDelete = planEviction(memory, this.config, Date.now());
 
-        // First pass: remove expired items
-        for (const [key, item] of memory) {
-            if (item.expiresAt && item.expiresAt < now) {
-                toDelete.push(key);
-            }
+        if (toDelete.length === 0) {
+            return 0;
         }
 
-        // Remove expired items
         for (const key of toDelete) {
             memory.delete(key);
         }
 
-        // Check if we're over limits
-        let totalTokens = 0;
-        const items = Array.from(memory.values());
-
-        for (const item of items) {
-            totalTokens += item.tokenCount;
-        }
-
-        // If over token limit, remove oldest/least accessed items
-        if (
-            totalTokens > this.config.maxTotalTokens ||
-            memory.size > this.config.maxItems
-        ) {
-            // Sort by priority (lower = more likely to evict)
-            items.sort((a, b) => {
-                // Prioritize keeping: recently accessed, frequently accessed, recent
-                const scoreA =
-                    a.accessCount * 1000 + a.lastAccessedAt / 1000000;
-                const scoreB =
-                    b.accessCount * 1000 + b.lastAccessedAt / 1000000;
-                return scoreA - scoreB; // Lower score = evict first
-            });
-
-            // Evict until under limits
-            for (const item of items) {
-                if (
-                    memory.size <= this.config.maxItems &&
-                    totalTokens <= this.config.maxTotalTokens
-                ) {
-                    break;
-                }
-
-                if (!toDelete.includes(item.key)) {
-                    toDelete.push(item.key);
-                    memory.delete(item.key);
-                    totalTokens -= item.tokenCount;
-                }
-            }
-        }
-
-        // Save changes
-        if (toDelete.length > 0) {
-            await this.backend.save(crewId, memory);
-            this.logger?.info(`Evicted ${toDelete.length} memory items`, {
-                crewId,
-            });
-            this.emitEvent(MemoryEvent.ITEMS_EVICTED, {
-                crewId,
-                count: toDelete.length,
-                reason: 'limits_exceeded',
-            });
-        }
+        await this.backend.save(crewId, memory);
+        this.logger?.info(`Evicted ${toDelete.length} memory items`, {
+            crewId,
+        });
+        this.emitEvent(MemoryEvent.ITEMS_EVICTED, {
+            crewId,
+            count: toDelete.length,
+            reason: 'limits_exceeded',
+        });
 
         return toDelete.length;
     }
