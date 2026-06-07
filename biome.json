@@ -21,7 +21,13 @@
                 "noExplicitAny": "off"
             },
             "complexity": {
-                "noForEach": "off"
+                "noForEach": "off",
+                "noExcessiveCognitiveComplexity": {
+                    "level": "error",
+                    "options": {
+                        "maxAllowedComplexity": 15
+                    }
+                }
             },
             "style": {
                 "noNonNullAssertion": "off",
