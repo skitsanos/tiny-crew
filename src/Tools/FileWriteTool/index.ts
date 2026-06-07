@@ -194,52 +194,48 @@ export class FileWriteTool implements Tool {
     private normalizeArgs(
         raw: FileWriteArgs | Record<string, any>,
     ): FileWriteArgs {
-        if (raw && typeof raw === 'object') {
-            const candidate = raw as Record<string, unknown>;
-            const filenameCandidate =
-                candidate.filename ??
-                candidate.fileName ??
-                candidate.path ??
-                candidate.filepath ??
-                candidate.file_path;
-            const contentCandidate =
-                candidate.content ?? candidate.text ?? candidate.data;
-            const overwriteCandidate =
-                candidate.overwrite ?? candidate.force ?? candidate.replace;
-
-            const filename = this.isNonEmptyString(filenameCandidate)
-                ? filenameCandidate.trim()
-                : '';
-
-            let content: string = '';
-            if (typeof contentCandidate === 'string') {
-                // Keep string content as-is (including empty strings)
-                content = contentCandidate;
-            } else if (
-                contentCandidate !== undefined &&
-                contentCandidate !== null
-            ) {
-                // Non-string, non-null/undefined: serialize to JSON
-                try {
-                    content = JSON.stringify(contentCandidate, null, 2);
-                } catch {
-                    content = String(contentCandidate);
-                }
-            }
-
-            const overwrite =
-                overwriteCandidate === undefined
-                    ? true
-                    : Boolean(overwriteCandidate);
-
-            return { filename, content, overwrite };
+        if (!raw || typeof raw !== 'object') {
+            return { filename: '', content: '', overwrite: true };
         }
 
+        const candidate = raw as Record<string, unknown>;
+        const filenameCandidate =
+            candidate.filename ??
+            candidate.fileName ??
+            candidate.path ??
+            candidate.filepath ??
+            candidate.file_path;
+        const overwriteCandidate =
+            candidate.overwrite ?? candidate.force ?? candidate.replace;
+
         return {
-            filename: '',
-            content: '',
-            overwrite: true,
+            filename: this.isNonEmptyString(filenameCandidate)
+                ? filenameCandidate.trim()
+                : '',
+            content: this.normalizeContent(
+                candidate.content ?? candidate.text ?? candidate.data,
+            ),
+            overwrite:
+                overwriteCandidate === undefined
+                    ? true
+                    : Boolean(overwriteCandidate),
         };
+    }
+
+    /** Coerce arbitrary content into a string (JSON-encoding objects) */
+    private normalizeContent(candidate: unknown): string {
+        // Keep string content as-is (including empty strings)
+        if (typeof candidate === 'string') {
+            return candidate;
+        }
+        if (candidate === undefined || candidate === null) {
+            return '';
+        }
+        try {
+            return JSON.stringify(candidate, null, 2);
+        } catch {
+            return String(candidate);
+        }
     }
 }
 
