@@ -28,9 +28,8 @@ const DEFAULT_MODEL_FALLBACK = 'gpt-4o-mini';
  * Common model patterns for validation warnings
  */
 const KNOWN_MODEL_PATTERNS = [
-    /^gpt-4/,
-    /^gpt-3\.5/,
-    /^o1/,
+    /^gpt-\d/, // gpt-3.5, gpt-4, gpt-4o, gpt-5.x, ...
+    /^o\d/, // o1, o3, o4, ... reasoning models
     /^claude/,
     /^gemini/,
     /^llama/,

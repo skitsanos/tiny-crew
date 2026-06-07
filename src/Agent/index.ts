@@ -97,6 +97,7 @@ export class Agent extends EventEmitter {
             model: config.model || process.env.DEFAULT_MODEL || 'gpt-4o-mini',
             temperature: config.temperature, // undefined if not set - let model use its default
             maxTokens: config.maxTokens, // undefined if not set - let model use its default
+            reasoningEffort: config.reasoningEffort, // undefined = model default
         };
         this.client = client;
         this.tools = new Map(tools.map((tool) => [tool.name, tool]));
@@ -714,18 +715,27 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             stream: true,
         };
 
-        if (this.llmConfig.temperature !== undefined) {
-            request.temperature = this.llmConfig.temperature;
-        }
-        if (this.llmConfig.maxTokens !== undefined) {
-            request.max_output_tokens = this.llmConfig.maxTokens;
-        }
+        this.applyGenerationParams(request);
+
         if (this.tools.size > 0) {
             request.tools = buildToolDefinitions(this.tools);
             request.tool_choice = 'auto';
         }
 
         return request;
+    }
+
+    /** Apply shared generation params (temperature, token limit, reasoning) */
+    private applyGenerationParams(request: Record<string, any>): void {
+        if (this.llmConfig.temperature !== undefined) {
+            request.temperature = this.llmConfig.temperature;
+        }
+        if (this.llmConfig.maxTokens !== undefined) {
+            request.max_output_tokens = this.llmConfig.maxTokens;
+        }
+        if (this.llmConfig.reasoningEffort) {
+            request.reasoning = { effort: this.llmConfig.reasoningEffort };
+        }
     }
 
     private async *streamResponse(
@@ -1114,13 +1124,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             request.previous_response_id = previousResponseId;
         }
 
-        if (this.llmConfig.temperature !== undefined) {
-            request.temperature = this.llmConfig.temperature;
-        }
-
-        if (this.llmConfig.maxTokens !== undefined) {
-            request.max_output_tokens = this.llmConfig.maxTokens;
-        }
+        this.applyGenerationParams(request);
 
         // Add structured output format if responseSchema is provided
         if (this.responseSchema) {
@@ -1282,6 +1286,13 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                         : {}),
                     ...(this.llmConfig.maxTokens !== undefined
                         ? { max_output_tokens: this.llmConfig.maxTokens }
+                        : {}),
+                    ...(this.llmConfig.reasoningEffort
+                        ? {
+                              reasoning: {
+                                  effort: this.llmConfig.reasoningEffort,
+                              },
+                          }
                         : {}),
                 }),
             this.logger,

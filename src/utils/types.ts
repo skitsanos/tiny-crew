@@ -40,6 +40,20 @@ export interface Task {
     metadata?: Record<string, any>;
 }
 
+/**
+ * Reasoning effort for reasoning-capable models. Lower effort is faster and
+ * cheaper. Note that the accepted values vary by model generation: gpt-5.0
+ * uses 'minimal', while gpt-5.1+ use 'none' as the lowest and add 'xhigh'.
+ * The framework passes the value through; the model validates it.
+ */
+export type ReasoningEffort =
+    | 'none'
+    | 'minimal'
+    | 'low'
+    | 'medium'
+    | 'high'
+    | 'xhigh';
+
 // Agent configuration interfaces
 export interface AgentConfig {
     name: string;
@@ -49,6 +63,8 @@ export interface AgentConfig {
     systemPrompt?: string;
     temperature?: number;
     maxTokens?: number;
+    /** Reasoning effort for reasoning-capable models (e.g. gpt-5.x) */
+    reasoningEffort?: ReasoningEffort;
     capabilities?: string[]; // What this agent is good at
     metadata?: Record<string, any>;
     /** Preferred model for task execution (overrides ModelRouter for this agent) */
@@ -149,6 +165,8 @@ export interface LlmConfig {
     model: string;
     temperature?: number;
     maxTokens?: number;
+    /** Reasoning effort for reasoning-capable models (e.g. gpt-5.x) */
+    reasoningEffort?: ReasoningEffort;
     topP?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;
