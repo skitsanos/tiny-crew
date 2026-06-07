@@ -8,6 +8,11 @@ import {
 } from '@tinycrew/Memory';
 import { ModelRouter } from '@tinycrew/ModelRouter';
 import Logger from '@tinycrew/utils/logger';
+import {
+    buildMessage,
+    extractTextFromResponse,
+    toResponseInputItem,
+} from '@tinycrew/utils/responseHelpers';
 import { withRetry } from '@tinycrew/utils/retry';
 import {
     AgentEvent,
@@ -18,20 +23,12 @@ import {
 } from '@tinycrew/utils/types';
 import dedent from 'dedent';
 import type OpenAI from 'openai';
-import type {
-    Response,
-    ResponseInputItem,
-    ResponseOutputMessage,
-} from 'openai/resources/responses/responses';
-
-/**
- * Tracks agent performance for heuristic-based task assignment
- */
-interface AgentPerformanceRecord {
-    successCount: number;
-    failureCount: number;
-    lastTaskTypes: string[]; // Keywords from recent tasks
-}
+import type { ResponseInputItem } from 'openai/resources/responses/responses';
+import {
+    type AgentPerformanceRecord,
+    extractTaskKeywords,
+    scoreAgentForTask,
+} from './agentSelection';
 
 /**
  * Options for creating a Crew with custom backends and routing
@@ -187,7 +184,7 @@ export class Crew extends EventEmitter {
             const perf = this.agentPerformance.get(result.agent);
             if (perf) {
                 perf.successCount++;
-                const keywords = this.extractTaskKeywords(result.task);
+                const keywords = extractTaskKeywords(result.task);
                 perf.lastTaskTypes = [...keywords, ...perf.lastTaskTypes].slice(
                     0,
                     10,
@@ -395,150 +392,21 @@ export class Crew extends EventEmitter {
     /**
      * Extract keywords from a task description for matching
      */
-    private extractTaskKeywords(task: string): string[] {
-        const stopWords = new Set([
-            'a',
-            'an',
-            'the',
-            'and',
-            'or',
-            'but',
-            'in',
-            'on',
-            'at',
-            'to',
-            'for',
-            'of',
-            'with',
-            'by',
-            'from',
-            'as',
-            'is',
-            'was',
-            'are',
-            'were',
-            'been',
-            'be',
-            'have',
-            'has',
-            'had',
-            'do',
-            'does',
-            'did',
-            'will',
-            'would',
-            'could',
-            'should',
-            'may',
-            'might',
-            'must',
-            'shall',
-            'can',
-            'need',
-            'it',
-            'this',
-            'that',
-            'these',
-            'those',
-            'i',
-            'you',
-            'he',
-            'she',
-            'we',
-            'they',
-        ]);
-
-        return task
-            .toLowerCase()
-            .replace(/[^\w\s]/g, ' ')
-            .split(/\s+/)
-            .filter((word) => word.length > 2 && !stopWords.has(word));
-    }
-
-    /**
-     * Score an agent based on heuristics for a given task
-     */
-    private scoreAgentForTask(agent: Agent, taskKeywords: string[]): number {
-        let score = 0;
-        const agentName = agent.getName();
-
-        // 1. Capability matching (strongest signal)
-        const capabilities = agent
-            .getCapabilities()
-            .map((c) => c.toLowerCase());
-        for (const keyword of taskKeywords) {
-            if (
-                capabilities.some(
-                    (cap) => cap.includes(keyword) || keyword.includes(cap),
-                )
-            ) {
-                score += 10;
-            }
-        }
-
-        // 2. Tool matching (check if task mentions tools the agent has)
-        const toolNames = agent.getTools().map((t) => t.name.toLowerCase());
-        for (const keyword of taskKeywords) {
-            if (
-                toolNames.some(
-                    (tool) => tool.includes(keyword) || keyword.includes(tool),
-                )
-            ) {
-                score += 8;
-            }
-            // Check if task needs tools the agent has
-            if (keyword === 'save' || keyword === 'write') {
-                if (toolNames.some((t) => t.includes('file'))) score += 5;
-            }
-            if (keyword === 'scrape' || keyword === 'fetch') {
-                if (
-                    toolNames.some(
-                        (t) => t.includes('scrape') || t.includes('web'),
-                    )
-                )
-                    score += 5;
-            }
-        }
-
-        // 3. Goal matching
-        const goalWords = this.extractTaskKeywords(agent.getGoal());
-        for (const keyword of taskKeywords) {
-            if (goalWords.includes(keyword)) {
-                score += 3;
-            }
-        }
-
-        // 4. Past task success (bonus for agents with good track records)
-        const perf = this.agentPerformance.get(agentName);
-        if (perf) {
-            const totalTasks = perf.successCount + perf.failureCount;
-            if (totalTasks > 0) {
-                const successRate = perf.successCount / totalTasks;
-                score += Math.round(successRate * 5); // Up to 5 bonus points
-
-                // Bonus if agent has successfully done similar tasks
-                for (const keyword of taskKeywords) {
-                    if (perf.lastTaskTypes.includes(keyword)) {
-                        score += 2;
-                    }
-                }
-            }
-        }
-
-        return score;
-    }
-
     /**
      * Find a suitable agent for a task using heuristics first, then LLM fallback
      */
     private async findSuitableAgent(task: string): Promise<Agent | undefined> {
-        const taskKeywords = this.extractTaskKeywords(task);
+        const taskKeywords = extractTaskKeywords(task);
         this.logger.debug('Task keywords:', taskKeywords);
 
         // Score all agents using heuristics
         const scoredAgents = Array.from(this.agents.values()).map((agent) => ({
             agent,
-            score: this.scoreAgentForTask(agent, taskKeywords),
+            score: scoreAgentForTask(
+                agent,
+                taskKeywords,
+                this.agentPerformance.get(agent.getName()),
+            ),
         }));
 
         // Sort by score descending
@@ -614,8 +482,7 @@ export class Crew extends EventEmitter {
                 'crew:agent-selection',
             );
 
-            const chosenAgentName =
-                this.extractTextFromResponse(response)?.trim();
+            const chosenAgentName = extractTextFromResponse(response)?.trim();
 
             if (chosenAgentName === 'NONE') {
                 this.logger.warn(`No suitable agent found for task: ${task}`);
@@ -660,7 +527,7 @@ export class Crew extends EventEmitter {
 
             try {
                 // Extract keywords from task for relevance scoring
-                const taskKeywords = this.extractTaskKeywords(task);
+                const taskKeywords = extractTaskKeywords(task);
 
                 // Build memory context for the agent (scored by task relevance)
                 const memoryContext = await this.buildMemoryContext({
@@ -775,9 +642,9 @@ export class Crew extends EventEmitter {
         try {
             const input: ResponseInputItem[] = [
                 ...this.chatHistory.map((message) =>
-                    this.toResponseInputItem(message),
+                    toResponseInputItem(message),
                 ),
-                this.buildMessage('user', finalAnswerPrompt),
+                buildMessage('user', finalAnswerPrompt),
             ];
 
             const response = await withRetry(
@@ -791,7 +658,7 @@ export class Crew extends EventEmitter {
                 'crew:final-response',
             );
 
-            const finalResponse = this.extractTextFromResponse(response);
+            const finalResponse = extractTextFromResponse(response);
             if (finalResponse) {
                 // Add the final response to shared memory
                 this.storeTaskResult(
@@ -844,14 +711,14 @@ export class Crew extends EventEmitter {
                 () =>
                     this.client.responses.create({
                         model: this.modelRouter.getModel('goal_achievement'),
-                        input: [this.buildMessage('user', summaryPrompt)],
+                        input: [buildMessage('user', summaryPrompt)],
                         temperature: 0.5,
                     }),
                 this.logger,
                 'crew:summary',
             );
 
-            const summary = this.extractTextFromResponse(response);
+            const summary = extractTextFromResponse(response);
             if (summary) {
                 // Store the summary in shared memory
                 this.storeTaskResult('AI Assistant', 'Final Summary', summary);
@@ -879,72 +746,6 @@ export class Crew extends EventEmitter {
 
             throw error;
         }
-    }
-
-    private buildMessage(
-        role: 'user' | 'system' | 'developer',
-        content: string,
-    ): ResponseInputItem {
-        return {
-            type: 'message',
-            role,
-            content: [
-                {
-                    type: 'input_text',
-                    text: content,
-                },
-            ],
-        };
-    }
-
-    private buildAssistantMessage(content: string): ResponseOutputMessage {
-        return {
-            id: `msg_${randomUUID()}`,
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [
-                {
-                    type: 'output_text',
-                    text: content,
-                    annotations: [],
-                    logprobs: [],
-                },
-            ],
-        };
-    }
-
-    private toResponseInputItem(
-        message: ConversationMessage,
-    ): ResponseInputItem {
-        if (message.role === 'assistant') {
-            return this.buildAssistantMessage(message.content);
-        }
-
-        if (message.role === 'developer') {
-            return this.buildMessage('developer', message.content);
-        }
-
-        return this.buildMessage(message.role, message.content);
-    }
-
-    private extractTextFromResponse(response: Response): string {
-        if (response.output_text && response.output_text.trim().length > 0) {
-            return response.output_text;
-        }
-
-        const texts: string[] = [];
-        for (const item of response.output ?? []) {
-            if (item.type === 'message') {
-                for (const content of item.content) {
-                    if (content.type === 'output_text') {
-                        texts.push(content.text);
-                    }
-                }
-            }
-        }
-
-        return texts.join('\n').trim();
     }
 }
 
