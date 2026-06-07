@@ -1,9 +1,11 @@
 {
     "compilerOptions": {
-        "baseUrl": ".",
         "paths": {
-            "@tinycrew/*": ["src/*"]
+            "@tinycrew/*": ["./src/*"]
         },
+        // Bun runtime globals (Bun, Timer, bun:test, ...). Set explicitly so they
+        // are not shadowed by @types/node, which is pulled in transitively.
+        "types": ["bun"],
         // Enable latest features
         "lib": ["ESNext", "DOM"],
         "target": "ESNext",
