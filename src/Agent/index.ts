@@ -1433,16 +1433,17 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         `;
 
         try {
+            const reflectionRequest: Record<string, any> = {
+                model: this.getModelForPurpose('reflection'),
+                input: [
+                    buildMessage('system', this.systemPrompt),
+                    buildMessage('user', reflectionPrompt),
+                ],
+            };
+            this.applyGenerationParams(reflectionRequest);
+
             const reflection = await withRetry(
-                () =>
-                    this.client.responses.create({
-                        model: this.getModelForPurpose('reflection'),
-                        input: [
-                            buildMessage('system', this.systemPrompt),
-                            buildMessage('user', reflectionPrompt),
-                        ],
-                        temperature: 0.7,
-                    }),
+                () => this.client.responses.create(reflectionRequest),
                 this.logger,
                 `reflection (${this.name})`,
             );

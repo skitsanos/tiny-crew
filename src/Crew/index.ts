@@ -19,6 +19,7 @@ import {
     type ConversationMessage,
     type CrewConfig,
     CrewEvent,
+    type ReasoningEffort,
     TaskStatus,
 } from '@tinycrew/utils/types';
 import dedent from 'dedent';
@@ -58,6 +59,9 @@ export class Crew extends EventEmitter {
     private pendingTasks: string[];
     private readonly agentPerformance: Map<string, AgentPerformanceRecord>;
     private readonly modelRouter: ModelRouter;
+    private readonly temperature?: number;
+    private readonly maxTokens?: number;
+    private readonly reasoningEffort?: ReasoningEffort;
 
     /**
      * Create a new Crew instance
@@ -76,6 +80,9 @@ export class Crew extends EventEmitter {
         this.chatHistory = [...chatHistory];
         this.pendingTasks = [];
         this.agentPerformance = new Map();
+        this.temperature = config.temperature;
+        this.maxTokens = config.maxTokens;
+        this.reasoningEffort = config.reasoningEffort;
 
         this.taskAssignmentPrompt =
             config.taskAssignmentPrompt ||
@@ -95,6 +102,25 @@ export class Crew extends EventEmitter {
 
         // Initialize model router (defaults to env-based configuration)
         this.modelRouter = options?.modelRouter ?? ModelRouter.fromEnv();
+    }
+
+    /**
+     * Optional generation params to spread into responses.create. Each is only
+     * included when configured, so models (incl. reasoning models that reject a
+     * custom temperature) fall back to their own defaults otherwise.
+     */
+    private generationParams(): Record<string, unknown> {
+        const params: Record<string, unknown> = {};
+        if (this.temperature !== undefined) {
+            params.temperature = this.temperature;
+        }
+        if (this.maxTokens !== undefined) {
+            params.max_output_tokens = this.maxTokens;
+        }
+        if (this.reasoningEffort) {
+            params.reasoning = { effort: this.reasoningEffort };
+        }
+        return params;
     }
 
     /**
@@ -475,8 +501,7 @@ export class Crew extends EventEmitter {
                                 content: prompt,
                             },
                         ],
-                        temperature: 0.3,
-                        max_output_tokens: 50,
+                        ...this.generationParams(),
                     }),
                 this.logger,
                 'crew:agent-selection',
@@ -652,7 +677,7 @@ export class Crew extends EventEmitter {
                     this.client.responses.create({
                         model: this.modelRouter.getModel('final_response'),
                         input,
-                        temperature: 0.3,
+                        ...this.generationParams(),
                     }),
                 this.logger,
                 'crew:final-response',
@@ -712,7 +737,7 @@ export class Crew extends EventEmitter {
                     this.client.responses.create({
                         model: this.modelRouter.getModel('goal_achievement'),
                         input: [buildMessage('user', summaryPrompt)],
-                        temperature: 0.5,
+                        ...this.generationParams(),
                     }),
                 this.logger,
                 'crew:summary',

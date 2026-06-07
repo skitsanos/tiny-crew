@@ -155,6 +155,8 @@ export interface CrewConfig {
     model?: string;
     temperature?: number;
     maxTokens?: number;
+    /** Reasoning effort for reasoning-capable models (e.g. gpt-5.x) */
+    reasoningEffort?: ReasoningEffort;
     summarizationPrompt?: string;
     taskAssignmentPrompt?: string;
     metadata?: Record<string, any>;
