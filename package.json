@@ -1,6 +1,6 @@
 {
     "name": "tiny-crew",
-    "version": "2.6.2",
+    "version": "3.0.0",
     "description": "TypeScript framework for orchestrating multiple AI agents to solve complex tasks collaboratively",
     "module": "src/index.ts",
     "type": "module",
