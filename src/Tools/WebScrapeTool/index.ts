@@ -1,38 +1,27 @@
 import Logger from '@tinycrew/utils/logger';
 import type { Tool, ToolSchema } from '@tinycrew/utils/types';
-
-// Optional dependencies - loaded dynamically
-let JSDOM: typeof import('jsdom').JSDOM | null = null;
-let cheerio: typeof import('cheerio') | null = null;
-
-// Type imports for cheerio
-type CheerioAPI = import('cheerio').CheerioAPI;
-type DomElement = import('domhandler').Element;
-
-// Try to load optional dependencies
-try {
-    JSDOM = (await import('jsdom')).JSDOM;
-} catch {
-    // jsdom not available
-}
-
-try {
-    cheerio = await import('cheerio');
-} catch {
-    // cheerio not available
-}
+import {
+    assertDependencies,
+    getParserAvailability,
+    parseWithCheerio,
+    parseWithDom,
+    type ScrapeType,
+} from './parsers';
 
 interface WebScrapeArgs {
     url: string;
     selector: string;
-    type: 'text' | 'html' | 'table' | 'links' | 'images' | 'metadata';
+    type: ScrapeType;
     parseDom: boolean;
     timeout: number;
     userAgent: string;
 }
 
 /**
- * WebScrapeTool for retrieving content from websites using native fetch API
+ * WebScrapeTool for retrieving content from websites using the native fetch API.
+ *
+ * Parsing (jsdom / cheerio) lives in ./parsers; this class handles validation,
+ * fetching, and dispatch.
  */
 export class WebScrapeTool implements Tool {
     public readonly name = 'WebScrape';
@@ -144,7 +133,6 @@ export class WebScrapeTool implements Tool {
                 return false;
             }
 
-            // Extract domain from hostname
             const hostname = parsedUrl.hostname.toLowerCase();
 
             // Check for blocked domains
@@ -212,165 +200,74 @@ export class WebScrapeTool implements Tool {
     }
 
     /**
-     * Check if required dependencies are available
-     */
-    private checkDependencies(requireJsdom: boolean = false): void {
-        if (!cheerio) {
-            throw new Error(
-                'WebScrapeTool requires cheerio. Install it with: bun add cheerio',
-            );
-        }
-        if (requireJsdom && !JSDOM) {
-            throw new Error(
-                'WebScrapeTool with parseDom=true requires jsdom. Install it with: bun add jsdom',
-            );
-        }
-    }
-
-    /**
      * Check if WebScrapeTool dependencies are available
      */
     public static isAvailable(): { available: boolean; missing: string[] } {
-        const missing: string[] = [];
-        if (!cheerio) missing.push('cheerio');
-        if (!JSDOM) missing.push('jsdom');
-        return {
-            available: cheerio !== null,
-            missing,
-        };
+        return getParserAvailability();
     }
 
     /**
-     * Extract metadata from the HTML document
+     * Fetch the page HTML, enforcing timeout and response-size limits.
      */
-    private extractMetadata(
-        dom: InstanceType<typeof import('jsdom').JSDOM>,
-    ): Record<string, string> {
-        const metadata: Record<string, string> = {};
-        const document = dom.window.document;
-
-        // Extract title
-        const title = document.querySelector('title')?.textContent;
-        if (title) metadata.title = title;
-
-        // Extract meta tags
-        const metaTags = document.querySelectorAll('meta');
-        metaTags.forEach((meta: Element) => {
-            const name =
-                meta.getAttribute('name') || meta.getAttribute('property');
-            const content = meta.getAttribute('content');
-            if (name && content) {
-                metadata[name] = content;
-            }
-        });
-
-        return metadata;
-    }
-
-    /**
-     * Extract links from the HTML document
-     */
-    private extractLinks(
-        $: CheerioAPI,
-        baseUrl: string,
-    ): Array<{ text: string; url: string }> {
-        const links: Array<{ text: string; url: string }> = [];
-        $('a[href]').each((_, element: DomElement) => {
-            const linkElement = $(element);
-            const href = linkElement.attr('href') || '';
-            const text = linkElement.text().trim();
-
-            try {
-                // Resolve relative URLs against the base URL
-                const url = new URL(href, baseUrl).href;
-                links.push({ text, url });
-            } catch (_error) {
-                this.logger.debug(`Skipping invalid URL: ${href}`);
-            }
-        });
-
-        return links;
-    }
-
-    /**
-     * Extract images from the HTML document
-     */
-    private extractImages(
-        $: CheerioAPI,
-        baseUrl: string,
-    ): Array<{ alt: string; url: string }> {
-        const images: Array<{ alt: string; url: string }> = [];
-
-        $('img[src]').each((_, element: DomElement) => {
-            const imgElement = $(element);
-            const src = imgElement.attr('src') || '';
-            const alt = imgElement.attr('alt') || '';
-
-            try {
-                // Resolve relative URLs against the base URL
-                const url = new URL(src, baseUrl).href;
-                images.push({ alt, url });
-            } catch (_error) {
-                this.logger.debug(`Skipping invalid image URL: ${src}`);
-            }
-        });
-
-        return images;
-    }
-
-    /**
-     * Extract tables from the HTML document
-     */
-    private extractTables($: CheerioAPI): Array<Array<Array<string>>> {
-        const tables: Array<Array<Array<string>>> = [];
-
-        $('table').each((_, tableEl: DomElement) => {
-            const table: Array<Array<string>> = [];
-
-            $(tableEl)
-                .find('tr')
-                .each((_, rowEl: DomElement) => {
-                    const row: Array<string> = [];
-
-                    // Handle both th and td cells
-                    $(rowEl)
-                        .find('th, td')
-                        .each((_, cellEl: DomElement) => {
-                            row.push($(cellEl).text().trim());
-                        });
-
-                    if (row.length > 0) {
-                        table.push(row);
-                    }
-                });
-
-            if (table.length > 0) {
-                tables.push(table);
-            }
-        });
-
-        return tables;
-    }
-
-    /**
-     * Creates an AbortController and sets a timeout
-     */
-    private createTimeoutController(timeout: number): {
-        controller: AbortController;
-        signal: AbortSignal;
-    } {
+    private async fetchHtml(
+        url: string,
+        timeout: number,
+        userAgent: string,
+    ): Promise<{ html: string; finalUrl: string }> {
         const controller = new AbortController();
-        const signal = controller.signal;
+        const timer = setTimeout(
+            () => controller.abort(`Request timed out after ${timeout}ms`),
+            timeout,
+        );
 
-        setTimeout(() => {
-            controller.abort(`Request timed out after ${timeout}ms`);
-        }, timeout);
+        try {
+            const headers = new Headers({
+                'User-Agent': userAgent || this.defaultUserAgent,
+                Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+            });
 
-        return { controller, signal };
+            const response = await fetch(url, {
+                headers,
+                signal: controller.signal,
+                redirect: 'follow',
+            });
+
+            if (!response.ok) {
+                throw new Error(
+                    `HTTP error ${response.status}: ${response.statusText}`,
+                );
+            }
+
+            this.assertWithinSizeLimit(response.headers.get('content-length'));
+
+            const html = await response.text();
+            if (html.length > this.maxResponseSize) {
+                throw new Error(
+                    `Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`,
+                );
+            }
+
+            return { html, finalUrl: response.url || url };
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /** Throw if the advertised content-length exceeds the configured limit */
+    private assertWithinSizeLimit(contentLength: string | null): void {
+        if (
+            contentLength &&
+            parseInt(contentLength, 10) > this.maxResponseSize
+        ) {
+            throw new Error(
+                `Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`,
+            );
+        }
     }
 
     /**
-     * Extract content from a URL with various options using native fetch
+     * Extract content from a URL with various options using native fetch.
      */
     public async use({
         url,
@@ -379,11 +276,10 @@ export class WebScrapeTool implements Tool {
         parseDom = false,
         timeout = this.defaultTimeout,
         userAgent = this.defaultUserAgent,
-    }: WebScrapeArgs): Promise<any> {
+    }: WebScrapeArgs): Promise<unknown> {
         this.logger.debug(`Scraping URL: ${url}`);
 
-        // Check dependencies are available
-        this.checkDependencies(parseDom);
+        assertDependencies(parseDom);
 
         if (
             !this.validateInput({
@@ -399,145 +295,37 @@ export class WebScrapeTool implements Tool {
         }
 
         try {
-            // Set up timeout with AbortController
-            const timeoutMs = timeout || this.defaultTimeout;
-            const { signal } = this.createTimeoutController(timeoutMs);
-
-            // Configure request headers
-            const headers = new Headers({
-                'User-Agent': userAgent || this.defaultUserAgent,
-                Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-            });
-
-            // Make the HTTP request
-            const response = await fetch(url, {
-                headers,
-                signal,
-                redirect: 'follow',
-            });
-
-            // Check response status
-            if (!response.ok) {
-                throw new Error(
-                    `HTTP error ${response.status}: ${response.statusText}`,
-                );
-            }
-
-            // Check content length if available
-            const contentLength = response.headers.get('content-length');
-            if (
-                contentLength &&
-                parseInt(contentLength, 10) > this.maxResponseSize
-            ) {
-                throw new Error(
-                    `Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`,
-                );
-            }
-
-            // Get response text
-            const html = await response.text();
-
-            // Check actual content size
-            if (html.length > this.maxResponseSize) {
-                throw new Error(
-                    `Response size exceeds maximum allowed size (${this.maxResponseSize} bytes)`,
-                );
-            }
-
-            const finalUrl = response.url || url;
-
-            // Load the HTML content with appropriate parser
-            if (parseDom) {
-                // Use JSDOM for full DOM support (heavier but more accurate)
-                const dom = new JSDOM!(html, { url: finalUrl });
-
-                if (type === 'metadata') {
-                    return this.extractMetadata(dom);
-                }
-
-                const document = dom.window.document;
-
-                if (selector) {
-                    const selectedElements =
-                        document.querySelectorAll(selector);
-
-                    if (type === 'text') {
-                        return Array.from(selectedElements)
-                            .map((el: Element) => el.textContent?.trim())
-                            .filter(Boolean);
-                    } else if (type === 'html') {
-                        return Array.from(selectedElements)
-                            .map((el: Element) => (el as HTMLElement).outerHTML)
-                            .filter(Boolean);
-                    }
-                } else {
-                    if (type === 'text') {
-                        return document.body.textContent?.trim() || '';
-                    } else if (type === 'html') {
-                        return html;
-                    }
-                }
-            } else {
-                // Use Cheerio for faster parsing (lighter weight)
-                const $ = cheerio!.load(html);
-
-                if (type === 'links') {
-                    return this.extractLinks($, finalUrl);
-                }
-
-                if (type === 'images') {
-                    return this.extractImages($, finalUrl);
-                }
-
-                if (type === 'table') {
-                    return this.extractTables($);
-                }
-
-                if (selector) {
-                    const elements = $(selector);
-
-                    if (type === 'text') {
-                        return elements
-                            .map((_, el) => $(el).text().trim())
-                            .get();
-                    } else if (type === 'html') {
-                        return elements.map((_, el) => $.html(el)).get();
-                    }
-                } else {
-                    if (type === 'text') {
-                        return $('body').text().trim();
-                    } else if (type === 'html') {
-                        return html;
-                    }
-                }
-            }
-
-            throw new Error(
-                `Unsupported combination of type: ${type} and parseDom: ${parseDom}`,
+            const { html, finalUrl } = await this.fetchHtml(
+                url,
+                timeout || this.defaultTimeout,
+                userAgent,
             );
+
+            return parseDom
+                ? parseWithDom(html, finalUrl, selector, type)
+                : parseWithCheerio(html, finalUrl, selector, type, this.logger);
         } catch (error: any) {
             this.logger.error(`Error scraping ${url}: ${error}`);
-
-            // Enhance error information based on the error type
-            if (error instanceof TypeError && error.message.includes('fetch')) {
-                throw new Error(
-                    `Network error while fetching ${url}: ${error.message}`,
-                );
-            } else if (error.name === 'AbortError') {
-                throw new Error(
-                    `Request timeout after ${timeout || this.defaultTimeout}ms`,
-                );
-            } else if (
-                error instanceof DOMException &&
-                error.name === 'SyntaxError'
-            ) {
-                throw new Error(`Error parsing HTML from ${url}`);
-            }
-
-            // Pass through other errors
-            throw error;
+            throw this.normalizeError(error, url, timeout);
         }
+    }
+
+    /** Map low-level fetch/parse failures to clearer error messages */
+    private normalizeError(error: any, url: string, timeout: number): Error {
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            return new Error(
+                `Network error while fetching ${url}: ${error.message}`,
+            );
+        }
+        if (error.name === 'AbortError') {
+            return new Error(
+                `Request timeout after ${timeout || this.defaultTimeout}ms`,
+            );
+        }
+        if (error instanceof DOMException && error.name === 'SyntaxError') {
+            return new Error(`Error parsing HTML from ${url}`);
+        }
+        return error;
     }
 }
 
