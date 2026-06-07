@@ -11,7 +11,7 @@ This means the system can adapt to new types of tasks or the introduction of new
 ## Technical Foundation
 
 - **TypeScript** - Strong typing and enhanced developer experience
-- **Bun/Node.js** - Runs natively on Bun 1.2.x+ or Node.js 22+
+- **Bun** - Bun-only; runs natively on Bun 1.2.x+ and relies on Bun's runtime APIs
 - **OpenAI Responses API** - Reliable tool calling with automatic retry mechanisms
 - **Peer Dependencies** - Designed for use as a submodule without dependency conflicts
 

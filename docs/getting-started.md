@@ -4,7 +4,7 @@ This guide covers installation, configuration, and your first TinyCrew applicati
 
 ## Prerequisites
 
-- **Bun** (v1.2.x or newer) or **Node.js** (v22+)
+- **Bun** (v1.2.x or newer) — TinyCrew is Bun-only and relies on Bun's runtime
 - **TypeScript**
 - **OpenAI API key** (uses OpenAI Responses API)
 

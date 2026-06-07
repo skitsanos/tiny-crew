@@ -355,16 +355,8 @@ export class Logger {
         text: string,
         stream: 'stdout' | 'stderr' = 'stdout',
     ): Promise<void> {
-        if (typeof Bun !== 'undefined') {
-            // Bun environment
-            const bunStream = stream === 'stderr' ? Bun.stderr : Bun.stdout;
-            await Bun.write(bunStream, text);
-        } else {
-            // Node.js environment
-            const nodeStream =
-                stream === 'stderr' ? process.stderr : process.stdout;
-            nodeStream.write(text);
-        }
+        const bunStream = stream === 'stderr' ? Bun.stderr : Bun.stdout;
+        await Bun.write(bunStream, text);
     }
 
     private prepareStructuredLog(logContent: LogContent): Record<string, any> {
