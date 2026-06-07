@@ -145,6 +145,49 @@ function scorePerformance(
     return score;
 }
 
+/**
+ * Pick a clear heuristic winner: top score must be >= 5 and at least 50% better
+ * than the runner-up. Returns undefined when the result is ambiguous (caller
+ * should then fall back to the LLM).
+ */
+export function pickHeuristicWinner(
+    scored: Array<{ agent: Agent; score: number }>,
+): Agent | undefined {
+    if (scored.length === 0 || scored[0].score <= 0) {
+        return undefined;
+    }
+
+    const topScore = scored[0].score;
+    const secondScore = scored.length > 1 ? scored[1].score : 0;
+
+    if (topScore >= 5 && (secondScore === 0 || topScore >= secondScore * 1.5)) {
+        return scored[0].agent;
+    }
+    return undefined;
+}
+
+/** Render agent capabilities/tools/track-record for the LLM selection prompt */
+export function buildAgentDescriptions(
+    agents: Agent[],
+    performance: Map<string, AgentPerformanceRecord>,
+): string {
+    return agents
+        .map((agent) => {
+            const perf = performance.get(agent.getName());
+            const perfInfo =
+                perf && perf.successCount + perf.failureCount > 0
+                    ? `\n        Success rate: ${Math.round((perf.successCount / (perf.successCount + perf.failureCount)) * 100)}%`
+                    : '';
+            return `${agent.getName()}: ${agent.getGoal()}
+        Capabilities: ${agent.getCapabilities().join(', ')}
+        Tools: ${agent
+            .getTools()
+            .map((t) => t.name)
+            .join(', ')}${perfInfo}`;
+        })
+        .join('\n\n');
+}
+
 /** Combined heuristic score for assigning a task to an agent */
 export function scoreAgentForTask(
     agent: Agent,

@@ -22,7 +22,9 @@ import dedent from 'dedent';
 import type OpenAI from 'openai';
 import {
     type AgentPerformanceRecord,
+    buildAgentDescriptions,
     extractTaskKeywords,
+    pickHeuristicWinner,
     scoreAgentForTask,
 } from './agentSelection';
 import {
@@ -446,22 +448,11 @@ export class Crew extends EventEmitter {
             })),
         );
 
-        // If there's a clear winner (score > 0 and significantly better than second place), use it
-        if (scoredAgents.length > 0 && scoredAgents[0].score > 0) {
-            const topScore = scoredAgents[0].score;
-            const secondScore =
-                scoredAgents.length > 1 ? scoredAgents[1].score : 0;
-
-            // Clear winner if score is at least 5 and at least 50% better than second place
-            if (
-                topScore >= 5 &&
-                (secondScore === 0 || topScore >= secondScore * 1.5)
-            ) {
-                this.logger.info(
-                    `Heuristic match: ${scoredAgents[0].agent.getName()} (score: ${topScore})`,
-                );
-                return scoredAgents[0].agent;
-            }
+        // Use a clear heuristic winner if there is one
+        const winner = pickHeuristicWinner(scoredAgents);
+        if (winner) {
+            this.logger.info(`Heuristic match: ${winner.getName()}`);
+            return winner;
         }
 
         // Fallback to LLM for ambiguous cases
@@ -469,21 +460,10 @@ export class Crew extends EventEmitter {
             'Using LLM for agent selection (heuristics inconclusive)',
         );
 
-        const agentDescriptions = Array.from(this.agents.values())
-            .map((agent) => {
-                const perf = this.agentPerformance.get(agent.getName());
-                const perfInfo =
-                    perf && perf.successCount + perf.failureCount > 0
-                        ? `\n        Success rate: ${Math.round((perf.successCount / (perf.successCount + perf.failureCount)) * 100)}%`
-                        : '';
-                return `${agent.getName()}: ${agent.getGoal()}
-        Capabilities: ${agent.getCapabilities().join(', ')}
-        Tools: ${agent
-            .getTools()
-            .map((t) => t.name)
-            .join(', ')}${perfInfo}`;
-            })
-            .join('\n\n');
+        const agentDescriptions = buildAgentDescriptions(
+            Array.from(this.agents.values()),
+            this.agentPerformance,
+        );
 
         const prompt = this.taskAssignmentPrompt
             .replace('{goal}', this.goal)
