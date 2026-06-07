@@ -19,12 +19,8 @@ cd tiny-crew
 
 ### Install Dependencies
 
-Using npm:
-```bash
-npm install
-```
+TinyCrew is Bun-only, so install with Bun:
 
-Or using Bun:
 ```bash
 bun install
 ```
@@ -45,7 +41,7 @@ LOG_JSON_STREAM=stdout
 
 ### Logging Configuration
 
-TinyCrew ships with a flexible logger that works in both Bun and Node runtimes. By default it prints colorized text logs, but you can mirror structured JSON alongside them for ingestion into log pipelines:
+TinyCrew ships with a flexible logger built on Bun's runtime. By default it prints colorized text logs, but you can mirror structured JSON alongside them for ingestion into log pipelines:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
