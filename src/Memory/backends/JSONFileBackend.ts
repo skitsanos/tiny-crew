@@ -3,6 +3,7 @@
  * Persists memory to JSON files with atomic writes
  */
 
+import { randomUUID } from 'node:crypto';
 import {
     access,
     mkdir,
@@ -123,9 +124,11 @@ export class JSONFileBackend implements MemoryBackend {
             ? JSON.stringify(data, null, 2)
             : JSON.stringify(data);
 
-        // Atomic write: write to temp file, then rename
-        // rename() is atomic on POSIX filesystems, so a crash won't leave a partial target
-        const tempPath = `${filePath}.tmp`;
+        // Atomic write: write to a unique temp file, then rename over the target.
+        // rename() is atomic on POSIX filesystems, so a crash won't leave a
+        // partial target. The temp name is unique per write so concurrent saves
+        // of the same crew don't share (and race on renaming) one temp file.
+        const tempPath = `${filePath}.${randomUUID()}.tmp`;
         await writeFile(tempPath, content, 'utf-8');
         await rename(tempPath, filePath);
 

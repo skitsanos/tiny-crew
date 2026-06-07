@@ -377,6 +377,10 @@ export class MemoryStore extends EventEmitter {
                 this.logger?.warn('Auto-eviction cycle failed:', error);
             }
         }, this.config.evictInterval);
+
+        // This background maintenance timer must not keep the process alive on
+        // its own; otherwise apps that never call closeMemory() hang on exit.
+        this.evictTimer?.unref?.();
     }
 
     /**
