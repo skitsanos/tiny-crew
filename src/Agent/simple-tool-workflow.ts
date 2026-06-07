@@ -9,6 +9,12 @@ import type { LlmConfig, ModelPurpose, Tool } from '@tinycrew/utils/types';
 import type OpenAI from 'openai';
 import type { ResponseInputItem } from 'openai/resources/responses/responses';
 
+interface ExtractedToolCall {
+    call_id: string;
+    name: string;
+    arguments: string;
+}
+
 export class SimpleToolWorkflow {
     constructor(
         private tools: Map<string, Tool>,
@@ -136,14 +142,8 @@ export class SimpleToolWorkflow {
      * Extract tool calls from response output items.
      * Handles both function_call items and message-embedded tool calls.
      */
-    private extractToolCalls(
-        outputItems: any[],
-    ): Array<{ call_id: string; name: string; arguments: string }> {
-        const toolCalls: Array<{
-            call_id: string;
-            name: string;
-            arguments: string;
-        }> = [];
+    private extractToolCalls(outputItems: any[]): ExtractedToolCall[] {
+        const toolCalls: ExtractedToolCall[] = [];
 
         for (const item of outputItems) {
             // Handle function_call items (primary Responses API format)
@@ -156,29 +156,31 @@ export class SimpleToolWorkflow {
             }
             // Handle message-embedded tool calls (for compatibility)
             else if (item.type === 'message' && item.content) {
-                for (const content of item.content) {
-                    if (
-                        content.type === 'tool_use' ||
-                        content.type === 'function_call'
-                    ) {
-                        toolCalls.push({
-                            call_id: content.id || content.call_id,
-                            name: content.name,
-                            arguments:
-                                typeof content.input === 'string'
-                                    ? content.input
-                                    : JSON.stringify(
-                                          content.input ||
-                                              content.arguments ||
-                                              {},
-                                      ),
-                        });
-                    }
-                }
+                this.collectEmbeddedToolCalls(item.content, toolCalls);
             }
         }
 
         return toolCalls;
+    }
+
+    /** Collect tool calls embedded inside a message's content blocks */
+    private collectEmbeddedToolCalls(
+        content: any[],
+        toolCalls: ExtractedToolCall[],
+    ): void {
+        for (const block of content) {
+            if (block.type !== 'tool_use' && block.type !== 'function_call') {
+                continue;
+            }
+            toolCalls.push({
+                call_id: block.id || block.call_id,
+                name: block.name,
+                arguments:
+                    typeof block.input === 'string'
+                        ? block.input
+                        : JSON.stringify(block.input || block.arguments || {}),
+            });
+        }
     }
 
     private buildToolDefinitions() {

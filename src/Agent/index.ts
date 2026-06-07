@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import EventEmitter from 'node:events';
 import type { ModelRouter } from '@tinycrew/ModelRouter';
 import Logger from '@tinycrew/utils/logger';
+import {
+    buildMessage,
+    extractTextFromResponse,
+    toResponseInputItem,
+} from '@tinycrew/utils/responseHelpers';
 import { withRetry } from '@tinycrew/utils/retry';
 import {
     type AgentConfig,
@@ -24,9 +29,19 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import type {
     Response,
     ResponseInputItem,
-    ResponseOutputMessage,
 } from 'openai/resources/responses/responses';
+import { summarizeConversation } from './conversation';
+import { ConversationManager } from './conversationManager';
 import type { MessageBus, SendMessageOptions } from './MessageBus';
+import { AgentMessaging } from './messaging';
+import { accumulateStreamToolCalls, createStreamState } from './streaming';
+import {
+    buildToolDefinitions,
+    buildToolInstruction,
+    type ExtractedToolCall,
+    extractToolCalls,
+    parseToolArguments,
+} from './toolCalling';
 
 /**
  * Enhanced Agent class with improved state management and tool handling
@@ -47,24 +62,10 @@ export class Agent extends EventEmitter {
     private readonly preferredModel?: string;
     private readonly responseSchema?: { schema: any; name: string };
 
-    /** Conversation history for multi-turn chats */
-    private conversationHistory: ConversationMessage[] = [];
-    /** Maximum messages to keep in history */
-    private readonly maxHistoryMessages: number;
-    /** Whether to auto-manage history */
-    private readonly autoManageHistory: boolean;
-    /** Whether to enable auto-summarization */
-    private readonly enableSummarization: boolean;
-    /** Token threshold for triggering summarization */
-    private readonly summarizationThreshold: number;
-    /** Model to use for summarization */
-    private readonly summarizationModel?: string;
-    /** Stored conversation summary (from previous summarizations) */
-    private conversationSummary: string = '';
-    /** Message bus for agent-to-agent communication */
-    private messageBus: MessageBus | null = null;
-    /** Message handlers registered by this agent */
-    private readonly messageHandlers: MessageHandler[] = [];
+    /** Conversation history + summarization (multi-turn chats) */
+    private readonly conversation: ConversationManager;
+    /** Agent-to-agent messaging (bus connection + inbound handlers) */
+    private readonly messaging: AgentMessaging;
 
     /**
      * Create a new Agent instance
@@ -84,21 +85,41 @@ export class Agent extends EventEmitter {
             model: config.model || process.env.DEFAULT_MODEL || 'gpt-4o-mini',
             temperature: config.temperature, // undefined if not set - let model use its default
             maxTokens: config.maxTokens, // undefined if not set - let model use its default
+            reasoningEffort: config.reasoningEffort, // undefined = model default
         };
         this.client = client;
         this.tools = new Map(tools.map((tool) => [tool.name, tool]));
         this.taskHistory = new Map();
         this.logger = new Logger(`Agent-${this.name}`);
+        this.messaging = new AgentMessaging(this.name, this.logger, (e, p) =>
+            this.emit(e, p),
+        );
 
-        // Initialize conversation history management
-        this.maxHistoryMessages = config.maxHistoryMessages ?? 50;
-        this.autoManageHistory = config.autoManageHistory ?? true;
-        this.conversationHistory = [];
-
-        // Initialize summarization settings
-        this.enableSummarization = config.enableSummarization ?? false;
-        this.summarizationThreshold = config.summarizationThreshold ?? 3000;
-        this.summarizationModel = config.summarizationModel;
+        // Conversation history + summarization. The summarize closure resolves
+        // the model lazily (the router may be attached after construction).
+        const summarizationModel = config.summarizationModel;
+        this.conversation = new ConversationManager({
+            agentName: this.name,
+            logger: this.logger,
+            emit: (e, p) => this.emit(e, p),
+            maxHistoryMessages: config.maxHistoryMessages ?? 50,
+            autoManageHistory: config.autoManageHistory ?? true,
+            enableSummarization: config.enableSummarization ?? false,
+            summarizationThreshold: config.summarizationThreshold ?? 3000,
+            summarize: (history, existingSummary, keepRecentCount) =>
+                summarizeConversation({
+                    history,
+                    existingSummary,
+                    keepRecentCount,
+                    client: this.client,
+                    model:
+                        summarizationModel ||
+                        this.getModelForPurpose('summarization'),
+                    temperature: this.llmConfig.temperature,
+                    logger: this.logger,
+                    agentName: this.name,
+                }),
+        });
 
         // Register default event handlers
         this.on(AgentEvent.TASK_COMPLETED, this.handleTaskComplete.bind(this));
@@ -231,276 +252,66 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * Get the current conversation history
      */
     getHistory(): ConversationMessage[] {
-        return [...this.conversationHistory];
+        return this.conversation.get();
     }
 
     /**
      * Get the number of messages in history
      */
     getHistoryLength(): number {
-        return this.conversationHistory.length;
+        return this.conversation.length();
     }
 
     /**
      * Clear the conversation history
      */
     clearHistory(): void {
-        const previousLength = this.conversationHistory.length;
-        this.conversationHistory = [];
-        this.emit(AgentEvent.HISTORY_CLEARED, {
-            agent: this.name,
-            previousLength,
-            timestamp: Date.now(),
-        });
-        this.logger.info(
-            `Conversation history cleared (was ${previousLength} messages)`,
-        );
+        this.conversation.clear();
     }
 
     /**
-     * Add a message to history
+     * Add a message to history (may trigger trim/summarization)
      */
     async addToHistory(message: ConversationMessage): Promise<void> {
-        this.conversationHistory.push(message);
-        this.emit(AgentEvent.MESSAGE_ADDED, {
-            agent: this.name,
-            role: message.role,
-            timestamp: Date.now(),
-        });
-
-        // Trim if needed (may trigger summarization if enabled)
-        if (this.conversationHistory.length > this.maxHistoryMessages) {
-            await this.trimHistory();
-        }
-    }
-
-    /**
-     * Trim history to maxHistoryMessages
-     * Removes oldest messages first, but preserves the first system message if present.
-     * If summarization is enabled, will summarize old messages instead of discarding.
-     */
-    private async trimHistory(): Promise<void> {
-        const toRemove =
-            this.conversationHistory.length - this.maxHistoryMessages;
-        if (toRemove <= 0) return;
-
-        // Check if we should summarize instead of just trimming
-        if (this.enableSummarization) {
-            const estimatedTokens = this.estimateHistoryTokens();
-            if (estimatedTokens > this.summarizationThreshold) {
-                await this.summarizeHistory();
-                return;
-            }
-        }
-
-        // Keep first message if it's a system message
-        const hasSystemFirst = this.conversationHistory[0]?.role === 'system';
-        const startIndex = hasSystemFirst ? 1 : 0;
-
-        // Remove oldest messages after the potential system message
-        this.conversationHistory.splice(startIndex, toRemove);
-
-        this.emit(AgentEvent.HISTORY_TRIMMED, {
-            agent: this.name,
-            removedCount: toRemove,
-            currentLength: this.conversationHistory.length,
-            timestamp: Date.now(),
-        });
-        this.logger.debug(`Trimmed ${toRemove} messages from history`);
+        await this.conversation.add(message);
     }
 
     /**
      * Estimate the number of tokens in the conversation history.
-     * Uses a rough approximation of ~4 characters per token.
      */
     estimateHistoryTokens(): number {
-        let totalChars = 0;
-        for (const message of this.conversationHistory) {
-            totalChars += message.content.length;
-        }
-        // Also include existing summary if any
-        totalChars += this.conversationSummary.length;
-        // Approximate 4 characters per token
-        return Math.ceil(totalChars / 4);
+        return this.conversation.estimateTokens();
     }
 
     /**
      * Summarize older conversation history to reduce context size while preserving key information.
-     * This method compresses old messages into a summary and keeps only recent messages.
      *
      * @param keepRecentCount - Number of recent messages to keep without summarizing (default: 10)
      * @returns The generated summary
-     *
-     * @example
-     * ```typescript
-     * // Manually trigger summarization
-     * const summary = await agent.summarizeHistory();
-     *
-     * // Keep more recent messages
-     * const summary = await agent.summarizeHistory(20);
-     * ```
      */
     async summarizeHistory(keepRecentCount: number = 10): Promise<string> {
-        // Don't summarize if there's nothing to summarize
-        if (this.conversationHistory.length <= keepRecentCount) {
-            this.logger.debug('Not enough history to summarize');
-            return this.conversationSummary;
-        }
-
-        // Separate messages to summarize and messages to keep
-        const hasSystemFirst = this.conversationHistory[0]?.role === 'system';
-        const startIndex = hasSystemFirst ? 1 : 0;
-
-        const messagesToKeep = this.conversationHistory.slice(-keepRecentCount);
-        const messagesToSummarize = this.conversationHistory.slice(
-            startIndex,
-            this.conversationHistory.length - keepRecentCount,
-        );
-
-        if (messagesToSummarize.length === 0) {
-            this.logger.debug(
-                'No messages to summarize after preserving system message',
-            );
-            return this.conversationSummary;
-        }
-
-        // Build the summarization prompt (excluding previous summary messages to avoid duplication)
-        const conversationText = messagesToSummarize
-            .filter(
-                (m) =>
-                    !(
-                        m.role === 'system' &&
-                        m.content.startsWith('[Previous conversation summary:')
-                    ),
-            )
-            .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-            .join('\n\n');
-
-        const existingSummaryContext = this.conversationSummary
-            ? `Previous conversation summary:\n${this.conversationSummary}\n\n`
-            : '';
-
-        const summarizationPrompt = dedent`
-            ${existingSummaryContext}Summarize the following conversation, preserving:
-            - Key topics discussed
-            - Important decisions or conclusions
-            - Any commitments or action items
-            - Relevant context for continuing the conversation
-
-            Be concise but comprehensive. The summary will be used to maintain context in future turns.
-
-            CONVERSATION:
-            ${conversationText}
-
-            SUMMARY:
-        `;
-
-        try {
-            const model =
-                this.summarizationModel ||
-                this.getModelForPurpose('summarization');
-
-            const response = await withRetry(
-                () =>
-                    this.client.responses.create({
-                        model,
-                        input: [
-                            this.buildMessage(
-                                'system',
-                                'You are a helpful assistant that creates concise conversation summaries.',
-                            ),
-                            this.buildMessage('user', summarizationPrompt),
-                        ],
-                        ...(this.llmConfig.temperature !== undefined
-                            ? { temperature: this.llmConfig.temperature }
-                            : {}),
-                    }),
-                this.logger,
-                `summarization (${this.name})`,
-            );
-
-            const summary = this.extractTextFromResponse(response);
-
-            if (summary) {
-                this.conversationSummary = summary;
-
-                // Rebuild history: keep system message (if any) + keep recent messages
-                const newHistory: ConversationMessage[] = [];
-
-                if (hasSystemFirst) {
-                    newHistory.push(this.conversationHistory[0]);
-                }
-
-                // Add a system message with the summary context
-                newHistory.push({
-                    role: 'system',
-                    content: `[Previous conversation summary: ${summary}]`,
-                });
-
-                // Filter out any previous summary system messages from messagesToKeep
-                // to avoid stacking multiple summaries over time
-                const filteredMessagesToKeep = messagesToKeep.filter(
-                    (m) =>
-                        !(
-                            m.role === 'system' &&
-                            m.content.startsWith(
-                                '[Previous conversation summary:',
-                            )
-                        ),
-                );
-
-                // Add the recent messages we kept (excluding previous summaries)
-                newHistory.push(...filteredMessagesToKeep);
-
-                const previousLength = this.conversationHistory.length;
-                this.conversationHistory = newHistory;
-
-                this.emit(AgentEvent.HISTORY_SUMMARIZED, {
-                    agent: this.name,
-                    previousLength,
-                    newLength: this.conversationHistory.length,
-                    summarizedCount: messagesToSummarize.length,
-                    summaryLength: summary.length,
-                    timestamp: Date.now(),
-                });
-
-                this.logger.info(
-                    `Summarized ${messagesToSummarize.length} messages into ${summary.length} chars, ` +
-                        `history reduced from ${previousLength} to ${this.conversationHistory.length} messages`,
-                );
-            }
-
-            return summary;
-        } catch (error) {
-            this.logger.error('Error during summarization:', error);
-            // Fall back to simple trimming if summarization fails
-            this.conversationHistory = [
-                ...(hasSystemFirst ? [this.conversationHistory[0]] : []),
-                ...messagesToKeep,
-            ];
-            return this.conversationSummary;
-        }
+        return this.conversation.summarize(keepRecentCount);
     }
 
     /**
      * Get the current conversation summary (if any exists from previous summarizations)
      */
     getConversationSummary(): string {
-        return this.conversationSummary;
+        return this.conversation.getSummary();
     }
 
     /**
      * Set the conversation summary (useful for restoring state)
      */
     setConversationSummary(summary: string): void {
-        this.conversationSummary = summary;
+        this.conversation.setSummary(summary);
     }
 
     /**
      * Check if summarization is enabled for this agent
      */
     isSummarizationEnabled(): boolean {
-        return this.enableSummarization;
+        return this.conversation.isSummarizationEnabled();
     }
 
     /**
@@ -512,18 +323,15 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * @returns The agent's response
      */
     async chat(message: string, context: string = ''): Promise<string> {
-        // Add user message to history
-        await this.addToHistory({ role: 'user', content: message });
+        await this.conversation.add({ role: 'user', content: message });
 
-        // Perform task with full history
         const response = await this.performTask(
             message,
             context,
-            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [], // Exclude the message we just added (it's in taskDescription)
+            this.conversation.historyForTask(),
         );
 
-        // Add assistant response to history
-        await this.addToHistory({ role: 'assistant', content: response });
+        await this.conversation.add({ role: 'assistant', content: response });
 
         return response;
     }
@@ -532,10 +340,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * Set the conversation history (useful for restoring state)
      */
     setHistory(history: ConversationMessage[]): void {
-        this.conversationHistory = [...history];
-        this.logger.info(
-            `Conversation history set to ${history.length} messages`,
-        );
+        this.conversation.set(history);
     }
 
     /**
@@ -579,7 +384,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         for await (const chunk of this.performTaskStream(
             message,
             context,
-            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [],
+            this.conversation.historyForTask(),
         )) {
             if (chunk.content) {
                 fullResponse += chunk.content;
@@ -628,23 +433,23 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         });
 
         const conversation: ResponseInputItem[] = [];
-        conversation.push(this.buildMessage('system', this.systemPrompt));
+        conversation.push(buildMessage('system', this.systemPrompt));
 
         if (this.tools.size > 0) {
             conversation.push(
-                this.buildMessage('system', this.buildToolInstruction()),
+                buildMessage('system', buildToolInstruction(this.tools)),
             );
         }
 
         if (memoryContext.length > 0) {
-            conversation.push(this.buildMessage('system', memoryContext));
+            conversation.push(buildMessage('system', memoryContext));
         }
 
         for (const message of chatHistory) {
-            conversation.push(this.toResponseInputItem(message));
+            conversation.push(toResponseInputItem(message));
         }
 
-        conversation.push(this.buildMessage('user', taskDescription));
+        conversation.push(buildMessage('user', taskDescription));
 
         let fullText = '';
         const toolsUsed: string[] = [];
@@ -661,59 +466,11 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     `Processing ${toolCalls.length} tool calls from stream`,
                 );
 
-                // Yield tool call notifications
-                for (const tc of toolCalls) {
-                    yield {
-                        type: 'tool_call_start',
-                        toolName: tc.name,
-                        toolCallId: tc.call_id,
-                        isComplete: false,
-                    };
-
-                    toolsUsed.push(tc.name);
-                    const parseResult = this.parseToolArguments(tc.arguments);
-
-                    let output: string;
-                    if (!parseResult.success) {
-                        output = JSON.stringify({
-                            error: 'Invalid JSON arguments',
-                            details: parseResult.error,
-                        });
-                    } else {
-                        try {
-                            const result = await this.executeTool(
-                                tc.name,
-                                parseResult.args,
-                            );
-                            output =
-                                typeof result === 'string'
-                                    ? result
-                                    : JSON.stringify(result);
-                        } catch (error) {
-                            output = JSON.stringify({
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error),
-                            });
-                        }
-                    }
-
-                    yield {
-                        type: 'tool_call_end',
-                        toolName: tc.name,
-                        toolCallId: tc.call_id,
-                        content: output,
-                        isComplete: false,
-                    };
-
-                    // Store tool output for follow-up
-                    conversation.push({
-                        type: 'function_call_output',
-                        call_id: tc.call_id,
-                        output,
-                    } as ResponseInputItem);
-                }
+                yield* this.streamToolExecutions(
+                    toolCalls,
+                    conversation,
+                    toolsUsed,
+                );
 
                 // Get synthesis response (non-streaming for tool follow-up to avoid complexity)
                 // Use previous_response_id to maintain structured tool-call context
@@ -723,7 +480,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     responseId,
                 );
                 const synthesisText =
-                    this.extractTextFromResponse(synthesisResponse);
+                    extractTextFromResponse(synthesisResponse);
 
                 // Yield the synthesis as a final chunk
                 if (synthesisText) {
@@ -794,62 +551,118 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     /**
      * Internal method to stream a response and collect tool calls
      */
-    private async *streamResponse(
+    /**
+     * Execute streamed tool calls, yielding start/end chunks and appending the
+     * function_call_output items to the conversation for synthesis.
+     */
+    private async *streamToolExecutions(
+        toolCalls: ExtractedToolCall[],
         conversation: ResponseInputItem[],
-    ): AsyncGenerator<
-        StreamChunk,
-        {
-            text: string;
-            toolCalls: Array<{
-                call_id: string;
-                name: string;
-                arguments: string;
-            }>;
-            responseId?: string;
-        },
-        unknown
-    > {
+        toolsUsed: string[],
+    ): AsyncGenerator<StreamChunk, void, unknown> {
+        for (const tc of toolCalls) {
+            yield {
+                type: 'tool_call_start',
+                toolName: tc.name,
+                toolCallId: tc.call_id,
+                isComplete: false,
+            };
+
+            toolsUsed.push(tc.name);
+            const output = await this.runToolToString(tc);
+
+            yield {
+                type: 'tool_call_end',
+                toolName: tc.name,
+                toolCallId: tc.call_id,
+                content: output,
+                isComplete: false,
+            };
+
+            conversation.push({
+                type: 'function_call_output',
+                call_id: tc.call_id,
+                output,
+            } as ResponseInputItem);
+        }
+    }
+
+    /** Run a single tool call and return its output serialized to a string */
+    private async runToolToString(tc: ExtractedToolCall): Promise<string> {
+        const parseResult = parseToolArguments(tc.arguments);
+        if (!parseResult.success) {
+            return JSON.stringify({
+                error: 'Invalid JSON arguments',
+                details: parseResult.error,
+            });
+        }
+
+        try {
+            const result = await this.executeTool(tc.name, parseResult.args);
+            return typeof result === 'string' ? result : JSON.stringify(result);
+        } catch (error) {
+            return JSON.stringify({
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    /** Build the streaming responses.create request payload */
+    private buildStreamRequest(
+        conversation: ResponseInputItem[],
+    ): Record<string, any> {
         const request: Record<string, any> = {
             model: this.getModelForPurpose('task_execution'),
             input: conversation,
             stream: true,
         };
 
-        if (this.llmConfig.temperature !== undefined) {
-            request.temperature = this.llmConfig.temperature;
-        }
-
-        if (this.llmConfig.maxTokens !== undefined) {
-            request.max_output_tokens = this.llmConfig.maxTokens;
-        }
+        this.applyGenerationParams(request);
 
         if (this.tools.size > 0) {
-            request.tools = this.buildResponsesToolDefinitions();
+            request.tools = buildToolDefinitions(this.tools);
             request.tool_choice = 'auto';
         }
 
+        return request;
+    }
+
+    /** Apply shared generation params (temperature, token limit, reasoning) */
+    private applyGenerationParams(request: Record<string, any>): void {
+        if (this.llmConfig.temperature !== undefined) {
+            request.temperature = this.llmConfig.temperature;
+        }
+        if (this.llmConfig.maxTokens !== undefined) {
+            request.max_output_tokens = this.llmConfig.maxTokens;
+        }
+        if (this.llmConfig.reasoningEffort) {
+            request.reasoning = { effort: this.llmConfig.reasoningEffort };
+        }
+    }
+
+    private async *streamResponse(
+        conversation: ResponseInputItem[],
+    ): AsyncGenerator<
+        StreamChunk,
+        {
+            text: string;
+            toolCalls: ExtractedToolCall[];
+            responseId?: string;
+        },
+        unknown
+    > {
         this.logger.debug('Starting streaming request');
+        const stream = await this.client.responses.create(
+            this.buildStreamRequest(conversation),
+        );
 
-        const stream = await this.client.responses.create(request);
+        const state = createStreamState();
 
-        let fullText = '';
-        let responseId: string | undefined;
-        const toolCalls: Array<{
-            call_id: string;
-            name: string;
-            arguments: string;
-        }> = [];
-        const pendingToolCalls: Map<
-            string,
-            { name: string; arguments: string }
-        > = new Map();
-
-        // Handle the stream
         for await (const event of stream as unknown as AsyncIterable<any>) {
-            // Handle different event types from the streaming API
+            // Only text deltas are yielded; tool-call events are accumulated.
             if (event.type === 'response.output_text.delta') {
                 const delta = event.delta || '';
-                fullText += delta;
+                state.fullText += delta;
 
                 const chunk: StreamChunk = {
                     type: 'text',
@@ -864,67 +677,16 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                 });
 
                 yield chunk;
-            } else if (
-                event.type === 'response.function_call_arguments.delta'
-            ) {
-                // Accumulate function arguments
-                const callId = event.call_id || event.item_id;
-                if (callId) {
-                    const existing = pendingToolCalls.get(callId) || {
-                        name: '',
-                        arguments: '',
-                    };
-                    existing.arguments += event.delta || '';
-                    pendingToolCalls.set(callId, existing);
-                }
-            } else if (event.type === 'response.output_item.added') {
-                // New output item (could be a function call)
-                if (event.item?.type === 'function_call') {
-                    const callId = event.item.call_id || event.item.id;
-                    pendingToolCalls.set(callId, {
-                        name: event.item.name || '',
-                        arguments: '',
-                    });
-                }
-            } else if (event.type === 'response.output_item.done') {
-                // Output item completed
-                if (event.item?.type === 'function_call') {
-                    const callId = event.item.call_id || event.item.id;
-                    const pending = pendingToolCalls.get(callId);
-                    toolCalls.push({
-                        call_id: callId,
-                        name: event.item.name || pending?.name || '',
-                        arguments:
-                            event.item.arguments || pending?.arguments || '',
-                    });
-                    pendingToolCalls.delete(callId);
-                }
-            } else if (
-                event.type === 'response.completed' ||
-                event.type === 'response.done'
-            ) {
-                // Stream completed - capture response ID and extract any remaining tool calls
-                if (event.response?.id) {
-                    responseId = event.response.id;
-                }
-                if (event.response?.output) {
-                    for (const item of event.response.output) {
-                        if (
-                            item.type === 'function_call' &&
-                            !toolCalls.find((tc) => tc.call_id === item.call_id)
-                        ) {
-                            toolCalls.push({
-                                call_id: item.call_id,
-                                name: item.name,
-                                arguments: item.arguments,
-                            });
-                        }
-                    }
-                }
+            } else {
+                accumulateStreamToolCalls(event, state);
             }
         }
 
-        return { text: fullText, toolCalls, responseId };
+        return {
+            text: state.fullText,
+            toolCalls: state.toolCalls,
+            responseId: state.responseId,
+        };
     }
 
     /**
@@ -939,7 +701,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     } {
         return {
             history: this.getHistory(),
-            summary: this.conversationSummary,
+            summary: this.conversation.getSummary(),
             agentId: this.id,
             agentName: this.name,
             timestamp: Date.now(),
@@ -966,46 +728,21 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * ```
      */
     connectToMessageBus(bus: MessageBus): void {
-        if (this.messageBus) {
-            this.disconnectFromMessageBus();
-        }
-
-        this.messageBus = bus;
-
-        // Register with the bus using our combined handler
-        bus.registerAgent(this.name, async (ctx) => {
-            this.emit(AgentEvent.MESSAGE_RECEIVED, {
-                agent: this.name,
-                from: ctx.message.from,
-                message: ctx.message,
-                timestamp: Date.now(),
-            });
-
-            // Call all registered handlers
-            for (const handler of this.messageHandlers) {
-                await handler(ctx);
-            }
-        });
-
-        this.logger.info(`Connected to message bus`);
+        this.messaging.connect(bus);
     }
 
     /**
      * Disconnect this agent from the message bus
      */
     disconnectFromMessageBus(): void {
-        if (this.messageBus) {
-            this.messageBus.unregisterAgent(this.name);
-            this.messageBus = null;
-            this.logger.info(`Disconnected from message bus`);
-        }
+        this.messaging.disconnect();
     }
 
     /**
      * Check if this agent is connected to a message bus
      */
     isConnectedToMessageBus(): boolean {
-        return this.messageBus !== null;
+        return this.messaging.isConnected();
     }
 
     /**
@@ -1038,20 +775,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         content: string,
         options: SendMessageOptions = {},
     ): AgentMessage {
-        if (!this.messageBus) {
-            throw new Error('Agent is not connected to a message bus');
-        }
-
-        const message = this.messageBus.send(this.name, to, content, options);
-
-        this.emit(AgentEvent.MESSAGE_SENT, {
-            agent: this.name,
-            to,
-            message,
-            timestamp: Date.now(),
-        });
-
-        return message;
+        return this.messaging.send(to, content, options);
     }
 
     /**
@@ -1076,17 +800,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         options: SendMessageOptions = {},
         timeoutMs: number = 30000,
     ): Promise<AgentMessage> {
-        if (!this.messageBus) {
-            throw new Error('Agent is not connected to a message bus');
-        }
-
-        return this.messageBus.sendAndWait(
-            this.name,
-            to,
-            content,
-            options,
-            timeoutMs,
-        );
+        return this.messaging.sendAndWait(to, content, options, timeoutMs);
     }
 
     /**
@@ -1100,11 +814,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         content: string,
         options: Omit<SendMessageOptions, 'type'> = {},
     ): AgentMessage {
-        if (!this.messageBus) {
-            throw new Error('Agent is not connected to a message bus');
-        }
-
-        return this.messageBus.broadcast(this.name, content, options);
+        return this.messaging.broadcast(content, options);
     }
 
     /**
@@ -1130,22 +840,14 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * ```
      */
     onMessage(handler: MessageHandler): () => void {
-        this.messageHandlers.push(handler);
-
-        // Return unsubscribe function
-        return () => {
-            const index = this.messageHandlers.indexOf(handler);
-            if (index !== -1) {
-                this.messageHandlers.splice(index, 1);
-            }
-        };
+        return this.messaging.onMessage(handler);
     }
 
     /**
      * Get the number of registered message handlers
      */
     getMessageHandlerCount(): number {
-        return this.messageHandlers.length;
+        return this.messaging.handlerCount();
     }
 
     /**
@@ -1249,107 +951,6 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         }
     }
 
-    private buildMessage(
-        role: 'system' | 'user' | 'developer',
-        content: string,
-    ): ResponseInputItem {
-        return {
-            type: 'message',
-            role,
-            content: [
-                {
-                    type: 'input_text',
-                    text: content,
-                },
-            ],
-        };
-    }
-
-    private buildAssistantOutput(content: string): ResponseOutputMessage {
-        return {
-            id: `msg_${randomUUID()}`,
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [
-                {
-                    type: 'output_text',
-                    text: content,
-                    annotations: [],
-                    logprobs: [],
-                },
-            ],
-        };
-    }
-
-    private toResponseInputItem(
-        message: ConversationMessage,
-    ): ResponseInputItem {
-        if (message.role === 'assistant') {
-            return this.buildAssistantOutput(message.content);
-        }
-
-        if (message.role === 'developer') {
-            return this.buildMessage('developer', message.content);
-        }
-
-        return this.buildMessage(message.role, message.content);
-    }
-
-    private buildResponsesToolDefinitions(): Array<any> {
-        return Array.from(this.tools.values()).map((tool) => ({
-            type: 'function',
-            name: tool.schema.name,
-            description: tool.schema.description,
-            parameters: {
-                ...tool.schema.parameters,
-                additionalProperties: false,
-            },
-            strict: true,
-        }));
-    }
-
-    private buildToolInstruction(): string {
-        const instructions: string[] = [];
-
-        this.tools.forEach((tool) => {
-            const required = tool.schema.parameters.required ?? [];
-            const properties = Object.entries(
-                tool.schema.parameters.properties ?? {},
-            )
-                .map(([key, value]) => {
-                    const requiredFlag = required.includes(key)
-                        ? ' (required)'
-                        : '';
-                    return `- ${key}${requiredFlag}: ${value.description ?? 'no description provided'}`;
-                })
-                .join('\n');
-
-            instructions.push(
-                `Tool ${tool.schema.name}: ${tool.description}\nParameters:\n${properties}`,
-            );
-        });
-
-        instructions.push(
-            'When calling a tool, always provide valid JSON arguments for every required parameter.',
-        );
-
-        if (this.tools.has('FileWrite')) {
-            instructions.push(
-                'When a task requires writing or saving content, you MUST call the FileWrite tool with a JSON object containing "filename" (including any directories) and "content" (the full text to write). Do not claim that a file was written unless the FileWrite tool call succeeds.',
-            );
-            instructions.push(
-                'Example: {"name":"FileWrite","arguments":{"filename":"output/report.md","content":"# Report"}}',
-            );
-        }
-
-        instructions.push(
-            'After receiving tool outputs, you should incorporate their results and produce a final assistant message.',
-        );
-
-        return instructions.join('\n\n');
-    }
-
     private async createResponse(
         conversation: ResponseInputItem[],
         allowTools: boolean,
@@ -1365,13 +966,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             request.previous_response_id = previousResponseId;
         }
 
-        if (this.llmConfig.temperature !== undefined) {
-            request.temperature = this.llmConfig.temperature;
-        }
-
-        if (this.llmConfig.maxTokens !== undefined) {
-            request.max_output_tokens = this.llmConfig.maxTokens;
-        }
+        this.applyGenerationParams(request);
 
         // Add structured output format if responseSchema is provided
         if (this.responseSchema) {
@@ -1387,7 +982,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         }
 
         if (allowTools && this.tools.size > 0) {
-            const tools = this.buildResponsesToolDefinitions();
+            const tools = buildToolDefinitions(this.tools);
             this.logger.info(`Adding ${tools.length} tools to request`);
             this.logger.debug(
                 `Tools definition:`,
@@ -1405,6 +1000,62 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             this.logger,
             `responses.create (${this.name})`,
         );
+    }
+
+    /** Execute tool calls (non-streaming) into function_call_output items */
+    private async executeToolCalls(
+        toolCalls: ExtractedToolCall[],
+        toolsUsed: string[],
+    ): Promise<ResponseInputItem[]> {
+        const toolOutputs: ResponseInputItem[] = [];
+        for (const tc of toolCalls) {
+            toolsUsed.push(tc.name);
+            const output = await this.runToolCallLogged(tc);
+            toolOutputs.push({
+                type: 'function_call_output',
+                call_id: tc.call_id,
+                output,
+            } as ResponseInputItem);
+        }
+        return toolOutputs;
+    }
+
+    /** Run one tool call with logging, returning its serialized output */
+    private async runToolCallLogged(tc: ExtractedToolCall): Promise<string> {
+        const parseResult = parseToolArguments(tc.arguments);
+
+        this.logger.info(`Executing tool: ${tc.name}`, {
+            agent: this.name,
+            toolCallId: tc.call_id,
+            arguments: parseResult.success
+                ? parseResult.args
+                : '<parse failed>',
+        });
+
+        if (!parseResult.success) {
+            // Surface argument parsing failure to the model so it can retry
+            this.logger.error(
+                `Failed to parse arguments for tool ${tc.name}:`,
+                { error: parseResult.error },
+            );
+            return JSON.stringify({
+                error: 'Invalid JSON arguments',
+                details: parseResult.error,
+                rawArguments: tc.arguments,
+            });
+        }
+
+        try {
+            const result = await this.executeTool(tc.name, parseResult.args);
+            return typeof result === 'string' ? result : JSON.stringify(result);
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
+            this.logger.error(`Tool execution failed: ${tc.name}`, {
+                error: errorMessage,
+            });
+            return JSON.stringify({ error: errorMessage });
+        }
     }
 
     private async runResponseWorkflow(
@@ -1431,7 +1082,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
             JSON.stringify(response.output, null, 2),
         );
 
-        const toolCalls = this.extractToolCalls(response);
+        const toolCalls = extractToolCalls(response.output ?? []);
 
         this.logger.info(
             `Extracted ${toolCalls.length} tool calls from response`,
@@ -1439,7 +1090,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
 
         // Step 3: If no tools called, return the response immediately
         if (toolCalls.length === 0) {
-            const text = this.extractTextFromResponse(response);
+            const text = extractTextFromResponse(response);
             if (this.tools.size > 0 && !text) {
                 this.logger.warn(
                     `No tool calls found and no text response. Available tools: ${Array.from(this.tools.keys()).join(', ')}`,
@@ -1455,59 +1106,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         this.logger.info(`Found ${toolCalls.length} tool calls to execute`);
 
         // Step 4: Execute all tool calls and prepare outputs for the model
-        const toolOutputs: ResponseInputItem[] = [];
-
-        for (const tc of toolCalls) {
-            const parseResult = this.parseToolArguments(tc.arguments);
-            toolsUsed.push(tc.name);
-
-            this.logger.info(`Executing tool: ${tc.name}`, {
-                agent: this.name,
-                toolCallId: tc.call_id,
-                arguments: parseResult.success
-                    ? parseResult.args
-                    : '<parse failed>',
-            });
-
-            let output: string;
-
-            if (!parseResult.success) {
-                // Surface argument parsing failure to the model so it can retry
-                output = JSON.stringify({
-                    error: 'Invalid JSON arguments',
-                    details: parseResult.error,
-                    rawArguments: tc.arguments,
-                });
-                this.logger.error(
-                    `Failed to parse arguments for tool ${tc.name}:`,
-                    { error: parseResult.error },
-                );
-            } else {
-                try {
-                    const result = await this.executeTool(
-                        tc.name,
-                        parseResult.args,
-                    );
-                    output =
-                        typeof result === 'string'
-                            ? result
-                            : JSON.stringify(result);
-                } catch (error) {
-                    const errorMessage =
-                        error instanceof Error ? error.message : String(error);
-                    this.logger.error(`Tool execution failed: ${tc.name}`, {
-                        error: errorMessage,
-                    });
-                    output = JSON.stringify({ error: errorMessage });
-                }
-            }
-
-            toolOutputs.push({
-                type: 'function_call_output',
-                call_id: tc.call_id,
-                output,
-            } as ResponseInputItem);
-        }
+        const toolOutputs = await this.executeToolCalls(toolCalls, toolsUsed);
 
         // Step 5: Send tool outputs back to the model for synthesis
         this.logger.info(
@@ -1530,6 +1129,13 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
                     ...(this.llmConfig.maxTokens !== undefined
                         ? { max_output_tokens: this.llmConfig.maxTokens }
                         : {}),
+                    ...(this.llmConfig.reasoningEffort
+                        ? {
+                              reasoning: {
+                                  effort: this.llmConfig.reasoningEffort,
+                              },
+                          }
+                        : {}),
                 }),
             this.logger,
             `responses.create follow-up (${this.name})`,
@@ -1540,105 +1146,10 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         );
 
         return {
-            text: this.extractTextFromResponse(finalResponse),
+            text: extractTextFromResponse(finalResponse),
             response: finalResponse,
             toolsUsed,
         };
-    }
-
-    /**
-     * Extract tool calls from response output.
-     * Handles the primary Responses API format (function_call items).
-     */
-    private extractToolCalls(
-        response: Response,
-    ): Array<{ call_id: string; name: string; arguments: string }> {
-        const toolCalls: Array<{
-            call_id: string;
-            name: string;
-            arguments: string;
-        }> = [];
-
-        for (const item of response.output ?? []) {
-            // Handle function_call items (Responses API format)
-            if (item.type === 'function_call') {
-                const fc = item as any;
-                toolCalls.push({
-                    call_id: fc.call_id,
-                    name: fc.name,
-                    arguments: fc.arguments,
-                });
-            }
-            // Note: The Responses API primarily uses function_call items at the output level.
-            // Message-embedded tool_use is an Anthropic/Claude format, not OpenAI Responses API.
-            // Keeping minimal handling for potential future compatibility.
-            else if (item.type === 'message' && 'content' in item) {
-                for (const content of (item as any).content ?? []) {
-                    if (
-                        content.type === 'tool_use' ||
-                        content.type === 'function_call'
-                    ) {
-                        toolCalls.push({
-                            call_id: content.id || content.call_id,
-                            name: content.name,
-                            arguments:
-                                typeof content.input === 'string'
-                                    ? content.input
-                                    : JSON.stringify(
-                                          content.input ||
-                                              content.arguments ||
-                                              {},
-                                      ),
-                        });
-                    }
-                }
-            }
-        }
-
-        return toolCalls;
-    }
-
-    /**
-     * Parse tool arguments with explicit success/failure handling
-     */
-    private parseToolArguments(
-        value: string | null | undefined,
-    ):
-        | { success: true; args: Record<string, any> }
-        | { success: false; error: string; args: Record<string, any> } {
-        if (!value || value.trim() === '') {
-            return { success: true, args: {} };
-        }
-
-        try {
-            const parsed = JSON.parse(value);
-            return { success: true, args: parsed };
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                args: {}, // Fallback for backwards compatibility, but caller should check success
-            };
-        }
-    }
-
-    private extractTextFromResponse(response: Response): string {
-        if (response.output_text && response.output_text.trim().length > 0) {
-            return response.output_text;
-        }
-
-        const texts: string[] = [];
-        for (const item of response.output ?? []) {
-            if (item.type === 'message') {
-                for (const content of item.content) {
-                    if (content.type === 'output_text') {
-                        texts.push(content.text);
-                    }
-                }
-            }
-        }
-
-        return texts.join('\n').trim();
     }
 
     /**
@@ -1666,23 +1177,23 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         });
 
         const conversation: ResponseInputItem[] = [];
-        conversation.push(this.buildMessage('system', this.systemPrompt));
+        conversation.push(buildMessage('system', this.systemPrompt));
 
         if (this.tools.size > 0) {
             conversation.push(
-                this.buildMessage('system', this.buildToolInstruction()),
+                buildMessage('system', buildToolInstruction(this.tools)),
             );
         }
 
         if (memoryContext.length > 0) {
-            conversation.push(this.buildMessage('system', memoryContext));
+            conversation.push(buildMessage('system', memoryContext));
         }
 
         for (const message of chatHistory) {
-            conversation.push(this.toResponseInputItem(message));
+            conversation.push(toResponseInputItem(message));
         }
 
-        conversation.push(this.buildMessage('user', taskDescription));
+        conversation.push(buildMessage('user', taskDescription));
 
         this.logger.info(
             `Built conversation with ${conversation.length} items, starting workflow...`,
@@ -1764,22 +1275,23 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         `;
 
         try {
+            const reflectionRequest: Record<string, any> = {
+                model: this.getModelForPurpose('reflection'),
+                input: [
+                    buildMessage('system', this.systemPrompt),
+                    buildMessage('user', reflectionPrompt),
+                ],
+            };
+            this.applyGenerationParams(reflectionRequest);
+
             const reflection = await withRetry(
-                () =>
-                    this.client.responses.create({
-                        model: this.getModelForPurpose('reflection'),
-                        input: [
-                            this.buildMessage('system', this.systemPrompt),
-                            this.buildMessage('user', reflectionPrompt),
-                        ],
-                        temperature: 0.7,
-                    }),
+                () => this.client.responses.create(reflectionRequest),
                 this.logger,
                 `reflection (${this.name})`,
             );
 
             const reflectionContent =
-                this.extractTextFromResponse(reflection) ||
+                extractTextFromResponse(reflection) ||
                 'No reflection generated';
 
             // Store reflection in task metadata

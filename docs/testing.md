@@ -365,11 +365,11 @@ bun test
 # Run specific test file
 bun test tests/agent-conversation.test.ts
 
-# Run tests matching pattern
-bun test --grep "structured output"
+# Run tests whose name matches a pattern
+bun test --test-name-pattern "structured output"
 
-# Run with verbose output
-bun test --verbose
+# Generate a coverage profile
+bun test --coverage
 ```
 
 ## See Also

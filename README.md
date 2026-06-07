@@ -109,7 +109,7 @@ bun run examples/PersistentMemory.ts
 
 ## Requirements
 
-- Bun (v1.2.x+) or Node.js (v22+)
+- Bun (v1.2.x+) — TinyCrew is Bun-only and relies on Bun's runtime
 - TypeScript
 - OpenAI API key
 

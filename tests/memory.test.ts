@@ -576,8 +576,9 @@ describe('Memory System', () => {
 
         it('defers access count persistence until flush', async () => {
             // Use JSONFileBackend to verify deferred writes
+            const flushDir = mkdtempSync(join(tmpdir(), 'tiny-crew-flush-'));
             const backend = new JSONFileBackend({
-                basePath: mkdtempSync(join(tmpdir(), 'tiny-crew-flush-')),
+                basePath: flushDir,
                 createDir: true,
             });
 
@@ -605,7 +606,7 @@ describe('Memory System', () => {
 
             // Verify access count is persisted after flush
             const newBackend = new JSONFileBackend({
-                basePath: backend.basePath,
+                basePath: flushDir,
                 createDir: false,
             });
             const newStore = new MemoryStore(newBackend, { autoEvict: false });

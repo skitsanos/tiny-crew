@@ -64,9 +64,7 @@ async function runCreativeWritingExample() {
     });
 
     crew.on(CrewEvent.MEMORY_UPDATED, (data) => {
-        logger.debug(
-            `Story component updated by ${data.update.agent}: ${data.update.key}`,
-        );
+        logger.debug(`Story component updated by ${data.agent}: ${data.key}`);
     });
 
     crew.on(CrewEvent.GOAL_ACHIEVED, (data) => {
