@@ -31,6 +31,7 @@ import type {
     ResponseInputItem,
 } from 'openai/resources/responses/responses';
 import { summarizeConversation } from './conversation';
+import { ConversationManager } from './conversationManager';
 import type { MessageBus, SendMessageOptions } from './MessageBus';
 import { AgentMessaging } from './messaging';
 import { accumulateStreamToolCalls, createStreamState } from './streaming';
@@ -61,20 +62,8 @@ export class Agent extends EventEmitter {
     private readonly preferredModel?: string;
     private readonly responseSchema?: { schema: any; name: string };
 
-    /** Conversation history for multi-turn chats */
-    private conversationHistory: ConversationMessage[] = [];
-    /** Maximum messages to keep in history */
-    private readonly maxHistoryMessages: number;
-    /** Whether to auto-manage history */
-    private readonly autoManageHistory: boolean;
-    /** Whether to enable auto-summarization */
-    private readonly enableSummarization: boolean;
-    /** Token threshold for triggering summarization */
-    private readonly summarizationThreshold: number;
-    /** Model to use for summarization */
-    private readonly summarizationModel?: string;
-    /** Stored conversation summary (from previous summarizations) */
-    private conversationSummary: string = '';
+    /** Conversation history + summarization (multi-turn chats) */
+    private readonly conversation: ConversationManager;
     /** Agent-to-agent messaging (bus connection + inbound handlers) */
     private readonly messaging: AgentMessaging;
 
@@ -106,15 +95,31 @@ export class Agent extends EventEmitter {
             this.emit(e, p),
         );
 
-        // Initialize conversation history management
-        this.maxHistoryMessages = config.maxHistoryMessages ?? 50;
-        this.autoManageHistory = config.autoManageHistory ?? true;
-        this.conversationHistory = [];
-
-        // Initialize summarization settings
-        this.enableSummarization = config.enableSummarization ?? false;
-        this.summarizationThreshold = config.summarizationThreshold ?? 3000;
-        this.summarizationModel = config.summarizationModel;
+        // Conversation history + summarization. The summarize closure resolves
+        // the model lazily (the router may be attached after construction).
+        const summarizationModel = config.summarizationModel;
+        this.conversation = new ConversationManager({
+            agentName: this.name,
+            logger: this.logger,
+            emit: (e, p) => this.emit(e, p),
+            maxHistoryMessages: config.maxHistoryMessages ?? 50,
+            autoManageHistory: config.autoManageHistory ?? true,
+            enableSummarization: config.enableSummarization ?? false,
+            summarizationThreshold: config.summarizationThreshold ?? 3000,
+            summarize: (history, existingSummary, keepRecentCount) =>
+                summarizeConversation({
+                    history,
+                    existingSummary,
+                    keepRecentCount,
+                    client: this.client,
+                    model:
+                        summarizationModel ||
+                        this.getModelForPurpose('summarization'),
+                    temperature: this.llmConfig.temperature,
+                    logger: this.logger,
+                    agentName: this.name,
+                }),
+        });
 
         // Register default event handlers
         this.on(AgentEvent.TASK_COMPLETED, this.handleTaskComplete.bind(this));
@@ -247,165 +252,66 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * Get the current conversation history
      */
     getHistory(): ConversationMessage[] {
-        return [...this.conversationHistory];
+        return this.conversation.get();
     }
 
     /**
      * Get the number of messages in history
      */
     getHistoryLength(): number {
-        return this.conversationHistory.length;
+        return this.conversation.length();
     }
 
     /**
      * Clear the conversation history
      */
     clearHistory(): void {
-        const previousLength = this.conversationHistory.length;
-        this.conversationHistory = [];
-        this.emit(AgentEvent.HISTORY_CLEARED, {
-            agent: this.name,
-            previousLength,
-            timestamp: Date.now(),
-        });
-        this.logger.info(
-            `Conversation history cleared (was ${previousLength} messages)`,
-        );
+        this.conversation.clear();
     }
 
     /**
-     * Add a message to history
+     * Add a message to history (may trigger trim/summarization)
      */
     async addToHistory(message: ConversationMessage): Promise<void> {
-        this.conversationHistory.push(message);
-        this.emit(AgentEvent.MESSAGE_ADDED, {
-            agent: this.name,
-            role: message.role,
-            timestamp: Date.now(),
-        });
-
-        // Trim if needed (may trigger summarization if enabled)
-        if (this.conversationHistory.length > this.maxHistoryMessages) {
-            await this.trimHistory();
-        }
-    }
-
-    /**
-     * Trim history to maxHistoryMessages
-     * Removes oldest messages first, but preserves the first system message if present.
-     * If summarization is enabled, will summarize old messages instead of discarding.
-     */
-    private async trimHistory(): Promise<void> {
-        const toRemove =
-            this.conversationHistory.length - this.maxHistoryMessages;
-        if (toRemove <= 0) return;
-
-        // Check if we should summarize instead of just trimming
-        if (this.enableSummarization) {
-            const estimatedTokens = this.estimateHistoryTokens();
-            if (estimatedTokens > this.summarizationThreshold) {
-                await this.summarizeHistory();
-                return;
-            }
-        }
-
-        // Keep first message if it's a system message
-        const hasSystemFirst = this.conversationHistory[0]?.role === 'system';
-        const startIndex = hasSystemFirst ? 1 : 0;
-
-        // Remove oldest messages after the potential system message
-        this.conversationHistory.splice(startIndex, toRemove);
-
-        this.emit(AgentEvent.HISTORY_TRIMMED, {
-            agent: this.name,
-            removedCount: toRemove,
-            currentLength: this.conversationHistory.length,
-            timestamp: Date.now(),
-        });
-        this.logger.debug(`Trimmed ${toRemove} messages from history`);
+        await this.conversation.add(message);
     }
 
     /**
      * Estimate the number of tokens in the conversation history.
-     * Uses a rough approximation of ~4 characters per token.
      */
     estimateHistoryTokens(): number {
-        let totalChars = 0;
-        for (const message of this.conversationHistory) {
-            totalChars += message.content.length;
-        }
-        // Also include existing summary if any
-        totalChars += this.conversationSummary.length;
-        // Approximate 4 characters per token
-        return Math.ceil(totalChars / 4);
+        return this.conversation.estimateTokens();
     }
 
     /**
      * Summarize older conversation history to reduce context size while preserving key information.
-     * This method compresses old messages into a summary and keeps only recent messages.
      *
      * @param keepRecentCount - Number of recent messages to keep without summarizing (default: 10)
      * @returns The generated summary
-     *
-     * @example
-     * ```typescript
-     * // Manually trigger summarization
-     * const summary = await agent.summarizeHistory();
-     *
-     * // Keep more recent messages
-     * const summary = await agent.summarizeHistory(20);
-     * ```
      */
     async summarizeHistory(keepRecentCount: number = 10): Promise<string> {
-        const result = await summarizeConversation({
-            history: this.conversationHistory,
-            existingSummary: this.conversationSummary,
-            keepRecentCount,
-            client: this.client,
-            model:
-                this.summarizationModel ||
-                this.getModelForPurpose('summarization'),
-            temperature: this.llmConfig.temperature,
-            logger: this.logger,
-            agentName: this.name,
-        });
-
-        this.conversationHistory = result.history;
-
-        if (result.didSummarize) {
-            this.conversationSummary = result.summary;
-            this.emit(AgentEvent.HISTORY_SUMMARIZED, {
-                agent: this.name,
-                previousLength: result.previousLength,
-                newLength: this.conversationHistory.length,
-                summarizedCount: result.summarizedCount,
-                summaryLength: result.summary.length,
-                timestamp: Date.now(),
-            });
-        }
-
-        return result.summary;
+        return this.conversation.summarize(keepRecentCount);
     }
 
     /**
      * Get the current conversation summary (if any exists from previous summarizations)
      */
     getConversationSummary(): string {
-        return this.conversationSummary;
+        return this.conversation.getSummary();
     }
 
     /**
      * Set the conversation summary (useful for restoring state)
      */
     setConversationSummary(summary: string): void {
-        this.conversationSummary = summary;
+        this.conversation.setSummary(summary);
     }
 
     /**
      * Check if summarization is enabled for this agent
      */
     isSummarizationEnabled(): boolean {
-        return this.enableSummarization;
+        return this.conversation.isSummarizationEnabled();
     }
 
     /**
@@ -417,18 +323,15 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * @returns The agent's response
      */
     async chat(message: string, context: string = ''): Promise<string> {
-        // Add user message to history
-        await this.addToHistory({ role: 'user', content: message });
+        await this.conversation.add({ role: 'user', content: message });
 
-        // Perform task with full history
         const response = await this.performTask(
             message,
             context,
-            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [], // Exclude the message we just added (it's in taskDescription)
+            this.conversation.historyForTask(),
         );
 
-        // Add assistant response to history
-        await this.addToHistory({ role: 'assistant', content: response });
+        await this.conversation.add({ role: 'assistant', content: response });
 
         return response;
     }
@@ -437,10 +340,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
      * Set the conversation history (useful for restoring state)
      */
     setHistory(history: ConversationMessage[]): void {
-        this.conversationHistory = [...history];
-        this.logger.info(
-            `Conversation history set to ${history.length} messages`,
-        );
+        this.conversation.set(history);
     }
 
     /**
@@ -484,7 +384,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
         for await (const chunk of this.performTaskStream(
             message,
             context,
-            this.autoManageHistory ? this.conversationHistory.slice(0, -1) : [],
+            this.conversation.historyForTask(),
         )) {
             if (chunk.content) {
                 fullResponse += chunk.content;
@@ -801,7 +701,7 @@ ${this.expectedOutput ? `Expected output format: ${this.expectedOutput}` : ''}`;
     } {
         return {
             history: this.getHistory(),
-            summary: this.conversationSummary,
+            summary: this.conversation.getSummary(),
             agentId: this.id,
             agentName: this.name,
             timestamp: Date.now(),
